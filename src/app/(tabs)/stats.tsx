@@ -84,7 +84,7 @@ function Heatmap({ days, width }: { days: HeatDay[]; width: number }) {
 export default function StatsScreen() {
   const { state, loading } = useAppState();
   const { width } = useWindowDimensions();
-  const isPremium = usePremium();
+  const { isPremium } = usePremium();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [shareDays, setShareDays] = useState<number | null>(null);
 

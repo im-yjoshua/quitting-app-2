@@ -75,6 +75,60 @@ export function orbRadiance(cleanDays: number): number {
   return 1 - Math.exp(-d / 30);
 }
 
+function hexToRgb(hex: string): [number, number, number] {
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const v = (n: number) =>
+    Math.max(0, Math.min(255, Math.round(n)))
+      .toString(16)
+      .padStart(2, '0');
+  return `#${v(r)}${v(g)}${v(b)}`;
+}
+
+/** Mix a color toward `other` by `amount` (0 = color, 1 = other). */
+function mixHex(hex: string, other: string, amount: number): string {
+  const [r1, g1, b1] = hexToRgb(hex);
+  const [r2, g2, b2] = hexToRgb(other);
+  return rgbToHex(
+    r1 + (r2 - r1) * amount,
+    g1 + (g2 - g1) * amount,
+    b1 + (b2 - b1) * amount
+  );
+}
+
+/**
+ * Luminance-matched grayscale of a color — used to desaturate the orb at
+ * low radiance so day 0 reads dim AND gray (spec §3), while keeping the
+ * gradient's 3D depth.
+ */
+function toGray(hex: string): string {
+  const [r, g, b] = hexToRgb(hex);
+  const lum = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+  return rgbToHex(lum, lum, lum);
+}
+
+/**
+ * Desaturation factor ∈ [0, 1]: 1 at day 0, ~0.56 at 7d ("warm glow"),
+ * ~0.08 at 30d ("rich color"), ~0 by 90d. Decays faster than the radiance
+ * curve so color arrives earlier than full luminosity.
+ */
+export function orbDesaturation(cleanDays: number): number {
+  const d = Math.max(0, cleanDays);
+  return Math.exp(-d / 12);
+}
+
+/** Smoothstep 0→1 across [edge0, edge1] for the shimmer gate. */
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const s = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
+  return s * s * (3 - 2 * s);
+}
+
 export function Orb({
   cleanDays,
   theme = 'dawn',
@@ -85,8 +139,16 @@ export function Orb({
   const stops = THEME_STOPS[theme];
   const t = orbRadiance(cleanDays);
 
+  // Day 0 renders a dim gray sphere; color blooms in as the streak grows.
+  const desat = orbDesaturation(cleanDays);
+  const inner = mixHex(stops.inner, toGray(stops.inner), desat);
+  const mid = mixHex(stops.mid, toGray(stops.mid), desat);
+  const outer = mixHex(stops.outer, toGray(stops.outer), desat);
+  const glow = mixHex(stops.glow, toGray(stops.glow), desat);
+
   const breathe = useSharedValue(1);
   const press = useSharedValue(1);
+  const shimmerX = useSharedValue(-1);
 
   useEffect(() => {
     if (!animated) return;
@@ -98,8 +160,27 @@ export function Orb({
     return () => cancelAnimation(breathe);
   }, [animated, breathe]);
 
+  // Shimmer sweep — only for luminous streaks (t ≥ ~0.85, i.e. 60d+,
+  // full by 90d). Slow, calm, UI-thread.
+  const shimmerT = smoothstep(0.85, 0.97, t);
+  const shimmerActive = animated && shimmerT > 0;
+  useEffect(() => {
+    if (!shimmerActive) return;
+    shimmerX.value = withRepeat(
+      withTiming(1, { duration: 4600, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+    return () => cancelAnimation(shimmerX);
+  }, [shimmerActive, shimmerX]);
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: breathe.value * press.value }],
+  }));
+
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: '18deg' }, { translateX: shimmerX.value * size * 0.6 }],
+    opacity: 0.16 * shimmerT,
   }));
 
   const handlePressIn = () => {
@@ -126,7 +207,7 @@ export function Orb({
             width: size * 1.55,
             height: size * 1.55,
             borderRadius: size * 0.775,
-            backgroundColor: stops.glow,
+            backgroundColor: glow,
             opacity: glowOpacity * 0.35,
           },
         ]}
@@ -138,7 +219,7 @@ export function Orb({
             width: size * 1.28,
             height: size * 1.28,
             borderRadius: size * 0.64,
-            backgroundColor: stops.glow,
+            backgroundColor: glow,
             opacity: glowOpacity * 0.6,
           },
         ]}
@@ -158,7 +239,7 @@ export function Orb({
           >
             <View style={StyleSheet.absoluteFill}>
               <LinearGradient
-                colors={[stops.inner, stops.mid, stops.outer]}
+                colors={[inner, mid, outer]}
                 start={{ x: 0.25, y: 0.15 }}
                 end={{ x: 0.8, y: 0.95 }}
                 style={StyleSheet.absoluteFill}
@@ -171,7 +252,7 @@ export function Orb({
                     width: size * 0.52,
                     height: size * 0.52,
                     borderRadius: size * 0.26,
-                    backgroundColor: stops.inner,
+                    backgroundColor: inner,
                     opacity: 0.25 + 0.45 * t,
                   },
                 ]}
@@ -190,6 +271,21 @@ export function Orb({
                   },
                 ]}
               />
+              {/* Shimmer sweep — luminous streaks only, clipped to the sphere */}
+              {shimmerActive && (
+                <Animated.View
+                  style={[
+                    styles.shimmerBand,
+                    {
+                      width: size * 0.28,
+                      height: size * 1.4,
+                      top: -size * 0.2,
+                      borderRadius: size * 0.14,
+                    },
+                    shimmerStyle,
+                  ]}
+                />
+              )}
             </View>
           </GlassSurface>
         </Pressable>
@@ -219,5 +315,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: '#FFFFFF',
     transform: [{ rotate: '-24deg' }],
+  },
+  shimmerBand: {
+    position: 'absolute',
+    alignSelf: 'center',
+    backgroundColor: '#FFFFFF',
   },
 });

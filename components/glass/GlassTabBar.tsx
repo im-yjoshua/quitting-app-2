@@ -82,7 +82,10 @@ export function GlassTabBar({ state, descriptors, navigation }: GlassTabBarProps
               }
             };
 
-            const tint = isFocused ? colors.accent : colors.textTertiary;
+            // Unfocused tabs stay legible: textSecondary (~9:1 on the dark
+            // canvas) rather than textTertiary, which washed out at 11px
+            // on the blur glass.
+            const tint = isFocused ? colors.accent : colors.textSecondary;
 
             return (
               <Pressable

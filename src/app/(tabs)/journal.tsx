@@ -5,13 +5,13 @@
  *   and unlimited).
  * - Timeline: reverse-chron entries grouped by day ("Today"/"Yesterday"/
  *   short date). Long-press an entry to delete it.
- * - Voice notes: the mic button is premium-gated — it opens an honest
- *   lock sheet ("Sovereign members only — the paywall lands Day 5").
- *   The recording pipeline itself (components/VoiceNoteRecorder +
- *   services/voiceJournal + expo-audio) is real, not faked; it mounts
- *   behind the entitlement check when the paywall lands.
+ * - Voice notes: the mic button is premium-gated — non-members route to the
+ *   real paywall (/paywall); members get the real recording pipeline
+ *   (components/VoiceNoteRecorder + services/voiceJournal + expo-audio)
+ *   mounted behind the entitlement check.
  * - Voice entries (once they exist) render a play/delete row.
  */
+import { router } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
@@ -34,6 +34,8 @@ import {
 import { GlassButton } from '../../../components/glass/GlassButton';
 import { GlassCard } from '../../../components/glass/GlassCard';
 import { Screen } from '../../../components/glass/Screen';
+import { VoiceNoteRecorder } from '../../../components/VoiceNoteRecorder';
+import { usePremium } from '../../../hooks/usePremium';
 import {
   deleteVoiceJournal,
   listVoiceJournals,
@@ -162,30 +164,32 @@ function VoiceEntryRow({
   );
 }
 
-function VoiceLockSheet({
+function VoiceRecorderSheet({
   visible,
   onClose,
+  onSaved,
 }: {
   visible: boolean;
   onClose: () => void;
+  onSaved: (entries: VoiceJournalEntry[]) => void;
 }) {
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="slide"
       onRequestClose={onClose}
     >
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <Pressable onPress={(e) => e.stopPropagation()}>
           <GlassCard style={styles.sheetCard}>
-            <Text style={styles.sheetEmoji}>🔒</Text>
-            <Text style={styles.sheetTitle}>Voice notes are for members</Text>
-            <Text style={styles.sheetSub}>
-              Unlimited voice check-ins unlock with Sovereign. The paywall
-              lands Day 5 — everything stays on this device, always.
-            </Text>
-            <GlassButton title="Got it" onPress={onClose} />
+            <VoiceNoteRecorder
+              onSaved={(entries) => {
+                onSaved(entries);
+                onClose();
+              }}
+              onCancel={onClose}
+            />
           </GlassCard>
         </Pressable>
       </Pressable>
@@ -198,7 +202,8 @@ export default function JournalScreen() {
   const [note, setNote] = useState('');
   const [craving, setCraving] = useState<CravingValue>(null);
   const [saving, setSaving] = useState(false);
-  const [lockVisible, setLockVisible] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const { isPremium } = usePremium();
   const [voiceEntries, setVoiceEntries] = useState<VoiceJournalEntry[]>([]);
 
   // Voice entries merge into the timeline once the gate opens (Day 5).
@@ -266,11 +271,21 @@ export default function JournalScreen() {
           <View style={styles.composerRow}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Add a voice note (Sovereign members only)"
-              onPress={() => setLockVisible(true)}
+              accessibilityLabel={
+                isPremium
+                  ? 'Record a voice note'
+                  : 'Record a voice note (Sovereign members only)'
+              }
+              onPress={() => {
+                if (isPremium) {
+                  setVoiceOpen(true);
+                } else {
+                  router.push('/paywall');
+                }
+              }}
               style={styles.micButton}
             >
-              <Text style={styles.micText}>🎙️ 🔒</Text>
+              <Text style={styles.micText}>{isPremium ? '🎙️' : '🎙️ 🔒'}</Text>
             </Pressable>
             <View style={styles.saveWrap}>
               <GlassButton
@@ -326,9 +341,10 @@ export default function JournalScreen() {
         )}
       </ScrollView>
 
-      <VoiceLockSheet
-        visible={lockVisible}
-        onClose={() => setLockVisible(false)}
+      <VoiceRecorderSheet
+        visible={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        onSaved={setVoiceEntries}
       />
     </Screen>
   );
@@ -443,13 +459,5 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     alignItems: 'center',
     gap: spacing.md,
-  },
-  sheetEmoji: { fontSize: 40 },
-  sheetTitle: { ...type.headline, color: colors.text, textAlign: 'center' },
-  sheetSub: {
-    ...type.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
   },
 });

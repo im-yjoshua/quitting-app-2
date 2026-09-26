@@ -125,14 +125,20 @@ export interface AppStateData {
   activeChallengeId: string | null;
 }
 
-export type PurchasePlan = 'annual' | 'lifetime';
+/**
+ * The 3-tier Sovereign pricing (Day 5). All three products unlock the single
+ * `sovereign_tier` entitlement; the plan only records WHICH tier it came from
+ * for copy/renewal copy. Lifetime was dropped: recurring keeps the habit
+ * loop honest.
+ */
+export type PurchasePlan = 'weekly' | 'monthly' | 'yearly';
 
 export type PurchaseState = 'idle' | 'pending' | 'purchased' | 'cancelled' | 'error';
 
 export interface SovereignEntitlement {
   isSovereign: boolean;
   activePlan: PurchasePlan | null;
-  expirationDate: number | null; // epoch ms or null if lifetime
+  expirationDate: number | null; // epoch ms or null if not yet synced
   latestPurchaseDate: number | null;
   originalPurchaseDate: number | null;
   source: 'revenuecat' | 'restored' | 'offline_cache';

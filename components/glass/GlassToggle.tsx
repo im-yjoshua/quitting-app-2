@@ -1,12 +1,19 @@
 /**
- * GlassToggle — a glass settings toggle (the motion_conquest CONTROL scene).
+ * GlassToggle — a glass settings toggle.
  *
- * Frosted pill track; the knob slides between off/on positions. Knob motion
- * animation lands with the Day-2 motion pass — the layout contract is final.
+ * Frosted pill track; the knob slides between off/on positions on a
+ * Reanimated shared value with `withSpring` — the whole animation runs on
+ * the UI thread with no per-frame JS. The shared value is seeded from the
+ * initial `value` prop so the knob never jumps on mount.
  */
 import * as Haptics from 'expo-haptics';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { colors, radii, spacing, type } from '../../theme/tokens';
 import { GlassSurface } from './GlassSurface';
@@ -19,11 +26,31 @@ interface GlassToggleProps {
   hint?: string;
 }
 
+const TRACK_W = 52;
+const TRACK_PAD = 3;
+const KNOB = 26;
+/** Knob travel: inner width minus knob diameter. */
+const ON_X = TRACK_W - KNOB - TRACK_PAD * 2;
+
 export function GlassToggle({ label, value, onValueChange, hint }: GlassToggleProps) {
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onValueChange(!value);
   };
+
+  // Seeded from the prop — no layout jump on mount. Later changes spring.
+  const knobX = useSharedValue(value ? ON_X : 0);
+  useEffect(() => {
+    knobX.value = withSpring(value ? ON_X : 0, {
+      damping: 20,
+      stiffness: 320,
+      mass: 0.8,
+    });
+  }, [value, knobX]);
+
+  const knobAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: knobX.value }],
+  }));
 
   return (
     <Pressable
@@ -42,15 +69,18 @@ export function GlassToggle({ label, value, onValueChange, hint }: GlassTogglePr
         fallbackIntensity={70}
       >
         <View style={styles.trackInner}>
-          <View style={[styles.knob, value ? styles.knobOn : styles.knobOff]} />
+          <Animated.View
+            style={[
+              styles.knob,
+              value ? styles.knobOn : styles.knobOff,
+              knobAnimatedStyle,
+            ]}
+          />
         </View>
       </GlassSurface>
     </Pressable>
   );
 }
-
-const TRACK_W = 52;
-const KNOB = 26;
 
 const styles = StyleSheet.create({
   row: {
@@ -87,19 +117,17 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 3,
+    paddingHorizontal: TRACK_PAD,
   },
   knob: {
     width: KNOB,
     height: KNOB,
     borderRadius: KNOB / 2,
-    backgroundColor: colors.text,
   },
   knobOff: {
-    alignSelf: 'center',
+    backgroundColor: colors.text,
   },
   knobOn: {
-    marginLeft: 'auto',
     backgroundColor: colors.accent,
   },
 });

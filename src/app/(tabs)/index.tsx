@@ -28,6 +28,7 @@ import {
 } from 'react-native';
 
 import { Orb } from '../../../components/Orb';
+import type { OrbTheme } from '../../../types/app';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
 import { GlassButton } from '../../../components/glass/GlassButton';
@@ -41,6 +42,37 @@ import { usePremium } from '../../../hooks/usePremium';
 import { colors, spacing, type } from '../../../theme/tokens';
 
 const REASON_ROTATE_MS = 8000;
+
+/**
+ * DEV-ONLY Orb radiance checkpoint preview (`__DEV__` only — never in
+ * release builds). Static renders at day 0 / 1 / 7 / 30 / 90 / 365 so the
+ * radiance curve can be eyeballed in Expo Go: day 0 must read small, dim,
+ * desaturated; 90d+ luminous. The shimmer sweep is UI-animated and shows
+ * on the live (animated) orb above, not in these static renders.
+ */
+const ORB_PREVIEW_DAYS = [0, 1, 7, 30, 90, 365];
+
+function OrbRadianceDevPreview({ theme }: { theme: OrbTheme }) {
+  if (!__DEV__) return null;
+  return (
+    <View style={styles.devPreview}>
+      <Text style={styles.devBanner}>DEV PREVIEW — not in production</Text>
+      <Text style={styles.devSub}>
+        Orb radiance checkpoints (static renders)
+      </Text>
+      <View style={styles.devGrid}>
+        {ORB_PREVIEW_DAYS.map((d) => (
+          <View key={d} style={styles.devCell}>
+            <Orb cleanDays={d} theme={theme} size={92} animated={false} />
+            <Text style={styles.devDay}>
+              {d === 365 ? 'day 365 (1y)' : `day ${d}`}
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 function ExactTimeSheet({
   visible,
@@ -88,7 +120,7 @@ export default function HomeScreen() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sheetVisible, setSheetVisible] = useState(false);
   const celebration = useMilestoneCelebration();
-  const isPremium = usePremium();
+  const { isPremium } = usePremium();
 
   // 1s live tick, paused while backgrounded.
   useEffect(() => {
@@ -236,6 +268,8 @@ export default function HomeScreen() {
             <Text style={styles.slipText}>I slipped</Text>
           </Pressable>
         </View>
+
+        <OrbRadianceDevPreview theme={state.settings.orbTheme} />
       </ScrollView>
 
       <ExactTimeSheet
@@ -312,4 +346,37 @@ const styles = StyleSheet.create({
   sheetTime: { ...type.title, color: colors.text, textAlign: 'center' },
   sheetSub: { ...type.callout, color: colors.textSecondary, marginTop: spacing.sm },
   sheetBtn: { marginTop: spacing.lg, alignSelf: 'stretch' },
+  devPreview: {
+    marginTop: spacing.xl,
+    borderTopWidth: 1,
+    borderColor: colors.hairline,
+    paddingTop: spacing.lg,
+  },
+  devBanner: {
+    ...type.micro,
+    color: colors.warning,
+    textAlign: 'center',
+    letterSpacing: 2,
+  },
+  devSub: {
+    ...type.caption,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  devGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  devCell: {
+    flexBasis: '50%',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+  },
+  devDay: {
+    ...type.caption,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
 });

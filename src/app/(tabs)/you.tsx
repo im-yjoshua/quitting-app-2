@@ -56,6 +56,13 @@ import { cleanDaysFloor } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
 import { usePremium } from '../../../hooks/usePremium';
 import { colors, radii, spacing, type } from '../../../theme/tokens';
+import type { OrbTheme } from '../../../types/app';
+
+const ORB_THEMES: { id: OrbTheme; label: string; locked: boolean; swatch: string }[] = [
+  { id: 'dawn', label: 'Dawn', locked: false, swatch: '#7C6CF0' },
+  { id: 'ember', label: 'Ember', locked: true, swatch: '#E8786A' },
+  { id: 'tide', label: 'Tide', locked: true, swatch: '#35B3A3' },
+];
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <Text style={styles.sectionTitle}>{children}</Text>;
@@ -63,7 +70,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export default function YouScreen() {
   const { state, loading, updateSettings, refresh } = useAppState();
-  const isPremium = usePremium();
+  const { isPremium } = usePremium();
   // Purity rule: Date.now() can't run in the render body — snapshot it once.
   const [nowSnapshot] = useState(() => Date.now());
   const [integrity, setIntegrity] = useState<'verified' | 'recovered' | null>(null);
@@ -352,6 +359,51 @@ export default function YouScreen() {
           />
         </GlassCard>
 
+        {/* Orb theme — Ember & Tide are Sovereign-member only */}
+        <SectionTitle>Orb theme</SectionTitle>
+        <GlassCard style={styles.card}>
+          <View style={styles.themeRow}>
+            {ORB_THEMES.map((t) => {
+              const locked = t.locked && !isPremium;
+              const selected = settings.orbTheme === t.id;
+              return (
+                <Pressable
+                  key={t.id}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  accessibilityLabel={
+                    locked ? `${t.label} theme (Sovereign members only)` : `${t.label} theme`
+                  }
+                  onPress={() => {
+                    if (locked) {
+                      router.push('/paywall');
+                    } else {
+                      void updateSettings({ orbTheme: t.id });
+                    }
+                  }}
+                  style={[
+                    styles.themeSwatch,
+                    selected && styles.themeSwatchSelected,
+                  ]}
+                >
+                  <View
+                    style={[styles.themeDot, { backgroundColor: t.swatch }]}
+                  />
+                  <Text style={styles.themeLabel}>
+                    {t.label}
+                    {locked ? ' 🔒' : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {!isPremium && (
+            <Text style={styles.footnote}>
+              Ember and Tide unlock with Sovereign.
+            </Text>
+          )}
+        </GlassCard>
+
         {/* App Commitments */}
         <SectionTitle>App commitments</SectionTitle>
         <GlassCard style={styles.card}>
@@ -517,6 +569,26 @@ const styles = StyleSheet.create({
   rowValue: { ...type.callout, color: colors.textSecondary },
   good: { color: colors.success, fontWeight: '600' },
   footnote: { ...type.caption, color: colors.textTertiary },
+  themeRow: { flexDirection: 'row', gap: spacing.md },
+  themeSwatch: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  themeSwatchSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentSoft,
+  },
+  themeDot: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  themeLabel: { ...type.callout, color: colors.text },
   btnRow: { gap: spacing.sm, marginTop: spacing.sm },
   divider: { height: 1, backgroundColor: colors.hairline },
   guideToggle: { paddingVertical: spacing.xs },

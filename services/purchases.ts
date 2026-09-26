@@ -10,15 +10,30 @@ import { authenticateLocalOwner } from './biometrics';
 import Constants, { AppOwnership, ExecutionEnvironment } from 'expo-constants';
 import { PurchasePlan, SovereignEntitlement } from '../types/app';
 
-// Product SKUs and Entitlement Identifiers
+// Product SKUs and Entitlement Identifiers (Day 5: 3-tier subscription).
 export const IAP_CONFIG = {
   ENTITLEMENT_ID: 'sovereign_tier',
-  SKU_ANNUAL: 'sovereign_annual_59',
-  SKU_LIFETIME: 'sovereign_lifetime_149',
-  ANNUAL_PRICE_USD: 59.0,
-  LIFETIME_PRICE_USD: 149.0,
+  SKU_WEEKLY: 'sovereign_weekly_399',
+  SKU_MONTHLY: 'sovereign_monthly_999',
+  SKU_YEARLY: 'sovereign_yearly_2999',
+  PRICES_USD: { weekly: 3.99, monthly: 9.99, yearly: 29.99 },
   STORAGE_KEY: '@sovereign_entitlement_v1',
 } as const;
+
+export const PLAN_SKU: Record<PurchasePlan, string> = {
+  weekly: IAP_CONFIG.SKU_WEEKLY,
+  monthly: IAP_CONFIG.SKU_MONTHLY,
+  yearly: IAP_CONFIG.SKU_YEARLY,
+};
+
+/**
+ * Safe __DEV__ accessor. React Native defines the __DEV__ global; node/jest
+ * do not. Reading it through globalThis keeps this module importable (and
+ * honest) in every environment without depending on RN's ambient types.
+ */
+const DEV: boolean =
+  typeof globalThis !== 'undefined' &&
+  (globalThis as Record<string, unknown>).__DEV__ === true;
 
 export const DEFAULT_ENTITLEMENT: SovereignEntitlement = {
   isSovereign: false,
@@ -45,10 +60,9 @@ export async function loadCachedEntitlement(): Promise<SovereignEntitlement> {
     }
     const parsed = JSON.parse(raw) as Partial<SovereignEntitlement>;
 
-    // Check expiration if annual subscription
+    // Check expiration: any non-lifetime plan with a past expiration is expired.
     const now = Date.now();
     const isExpired =
-      parsed.activePlan === 'annual' &&
       typeof parsed.expirationDate === 'number' &&
       parsed.expirationDate < now;
 
@@ -87,7 +101,7 @@ export async function saveCachedEntitlement(
  * A cached entitlement unlocks premium ONLY if it was previously validated by
  * RevenueCat (source === 'revenuecat'). Dev-sandbox synthesized entitlements
  * (source === 'offline_cache' with isSovereign true) are test artifacts and must
- * never unlock premium outside __DEV__.
+ * never unlock premium outside a dev build.
  */
 export function isValidatedEntitlement(
   entitlement: SovereignEntitlement
@@ -98,13 +112,13 @@ export function isValidatedEntitlement(
 /**
  * Offline entitlement trust rule — the single choke point for every
  * "RevenueCat unavailable" path in this file:
- * - __DEV__: honor whatever is cached (the dev sandbox may hold a simulated
+ * - dev builds (DEV): honor whatever is cached (the dev sandbox may hold a simulated
  *   entitlement from the DEV-ONLY purchase simulation below).
  * - production: honor ONLY previously RevenueCat-validated entitlements.
  */
 export async function getTrustedOfflineEntitlement(): Promise<SovereignEntitlement> {
   const cached = await loadCachedEntitlement();
-  if (__DEV__) {
+  if (DEV) {
     return cached;
   }
   return isValidatedEntitlement(cached) ? cached : DEFAULT_ENTITLEMENT;
@@ -152,7 +166,7 @@ export async function initializePurchases(): Promise<boolean> {
     }
 
     // Set non-verbose logging in production, info in dev
-    if (__DEV__) {
+    if (DEV) {
       Purchases.setLogLevel(Purchases.LOG_LEVEL.DEBUG);
     } else {
       Purchases.setLogLevel(Purchases.LOG_LEVEL.INFO);
@@ -180,18 +194,23 @@ export function extractEntitlementFromCustomerInfo(
 ): SovereignEntitlement {
   const sovereignEntitlement =
     customerInfo.entitlements.active[IAP_CONFIG.ENTITLEMENT_ID] ||
+    // Legacy identifiers from the old build — honored if ever seen, never minted.
     customerInfo.entitlements.active['sovereign_access'] ||
     customerInfo.entitlements.active['sovereign_annual'] ||
     customerInfo.entitlements.active['sovereign_lifetime'];
 
   if (sovereignEntitlement && sovereignEntitlement.isActive) {
-    const isLifetime =
-      sovereignEntitlement.productIdentifier === IAP_CONFIG.SKU_LIFETIME ||
-      !sovereignEntitlement.expirationDate;
+    const productId = sovereignEntitlement.productIdentifier;
+    const plan: PurchasePlan =
+      productId === IAP_CONFIG.SKU_WEEKLY
+        ? 'weekly'
+        : productId === IAP_CONFIG.SKU_MONTHLY
+          ? 'monthly'
+          : 'yearly';
 
     return {
       isSovereign: true,
-      activePlan: isLifetime ? 'lifetime' : 'annual',
+      activePlan: plan,
       expirationDate: sovereignEntitlement.expirationDate
         ? new Date(sovereignEntitlement.expirationDate).getTime()
         : null,
@@ -224,24 +243,35 @@ export interface PurchaseResult {
  * Handles Apple App Store StoreKit error codes cleanly (e.g. user cancellation, network failures).
  */
 export async function purchaseProduct(plan: PurchasePlan): Promise<PurchaseResult> {
-  const targetSku =
-    plan === 'annual' ? IAP_CONFIG.SKU_ANNUAL : IAP_CONFIG.SKU_LIFETIME;
+  const targetSku = PLAN_SKU[plan];
 
   // Ensure purchases bridge is active
   const ready = await initializePurchases();
 
   if (!ready) {
-    if (__DEV__) {
+    if (DEV) {
       // DEV-ONLY sandbox: RevenueCat isn't configured (e.g. Expo Go without a
       // test key). Synthesize a successful purchase so the paywall UI can be
-      // tested end-to-end. __DEV__ is false in every production/release build,
+      // tested end-to-end. DEV is false in every production/release build,
       // so this path can NEVER grant premium in production. Do not remove or
-      // weaken the __DEV__ guard.
+      // weaken the DEV guard.
       console.log('[Purchases] DEV-ONLY simulated sandbox purchase for:', plan);
       const simulatedEntitlement: SovereignEntitlement = {
         isSovereign: true,
         activePlan: plan,
-        expirationDate: plan === 'annual' ? Date.now() + 365 * 24 * 60 * 60 * 1000 : null,
+        // Subscriptions renew; the sim expires at the end of one billing
+        // period so the cache doesn't pretend to be permanent.
+        expirationDate:
+          Date.now() +
+          (plan === 'yearly'
+            ? 365
+            : plan === 'monthly'
+              ? 30
+              : 7) *
+            24 *
+            60 *
+            60 *
+            1000,
         latestPurchaseDate: Date.now(),
         originalPurchaseDate: Date.now(),
         source: 'offline_cache',
@@ -267,8 +297,9 @@ export async function purchaseProduct(plan: PurchasePlan): Promise<PurchaseResul
       packageToPurchase = offerings.current.availablePackages.find(
         (pkg) =>
           pkg.product.identifier === targetSku ||
-          (plan === 'annual' && pkg.packageType === 'ANNUAL') ||
-          (plan === 'lifetime' && pkg.packageType === 'LIFETIME')
+          (plan === 'weekly' && pkg.packageType === 'WEEKLY') ||
+          (plan === 'monthly' && pkg.packageType === 'MONTHLY') ||
+          (plan === 'yearly' && pkg.packageType === 'ANNUAL')
       );
     }
 
@@ -438,7 +469,7 @@ export async function syncCustomerEntitlements(): Promise<SovereignEntitlement> 
     const entitlement = extractEntitlementFromCustomerInfo(customerInfo);
     await saveCachedEntitlement(entitlement);
     return entitlement;
-  } catch (error) {
+  } catch {
     // If offline, silently keep the trusted cached entitlement (see trust rule
     // in getTrustedOfflineEntitlement — never a synthesized one in production).
     return getTrustedOfflineEntitlement();

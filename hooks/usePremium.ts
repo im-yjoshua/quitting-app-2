@@ -1,30 +1,45 @@
 /**
- * usePremium — reads the trusted offline entitlement snapshot (services/purchases.ts).
+ * usePremium — the single funnel for every premium gate in the app.
  *
- * Zero-latency, air-gapped: the cached snapshot decides gating; the Day 5
- * paywall re-verifies with RevenueCat on purchase/restore.
+ * Reads the trusted offline entitlement snapshot (services/purchases.ts):
+ * zero-latency, air-gapped. Re-reads on app foreground and exposes
+ * `refresh()` so purchase/restore flows can update gates immediately.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { getTrustedOfflineEntitlement } from '../services/purchases';
 
-export function usePremium(): boolean {
+export interface PremiumState {
+  isPremium: boolean;
+  /** Re-read the trusted snapshot (call after purchase/restore). */
+  refresh: () => Promise<void>;
+}
+
+export function usePremium(): PremiumState {
   const [isPremium, setIsPremium] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const ent = await getTrustedOfflineEntitlement();
-        if (!cancelled) setIsPremium(ent.isSovereign);
-      } catch {
-        // Offline snapshot unreadable → treat as free. Never crash gating.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const readSnapshot = useCallback(async () => {
+    try {
+      const ent = await getTrustedOfflineEntitlement();
+      setIsPremium(ent.isSovereign);
+    } catch {
+      // Offline snapshot unreadable → treat as free. Never crash gating.
+    }
   }, []);
 
-  return isPremium;
+  const refresh = useCallback(() => readSnapshot(), [readSnapshot]);
+
+  useEffect(() => {
+    // Async snapshot read on mount: the setState inside readSnapshot runs
+    // after an await, so this is not a synchronous setState-in-effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void readSnapshot();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void readSnapshot();
+    });
+    return () => sub.remove();
+  }, [readSnapshot]);
+
+  return { isPremium, refresh };
 }
