@@ -3,14 +3,15 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 
+import { AppStateProvider } from '../../state/AppStateContext';
+
 void SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // Day 1: no async boot work yet — state hydration lands with the
-    // AppData context (Day 2+). Flip ready on mount so the splash hides.
+    // State hydration now lives in AppStateProvider (Day 2+).
     setReady(true);
   }, []);
 
@@ -23,9 +24,9 @@ export default function RootLayout() {
   if (!ready) return null;
 
   return (
-    <>
+    <AppStateProvider>
       <StatusBar style="light" />
       <Slot />
-    </>
+    </AppStateProvider>
   );
 }

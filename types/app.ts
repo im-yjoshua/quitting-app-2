@@ -270,3 +270,214 @@ export function isTelemetryExportPayload(raw: unknown): raw is TelemetryExportPa
     Boolean(p.state && typeof p.state === 'object')
   );
 }
+// -----------------------------------------------------------------------------
+// SOVEREIGN V2 — quit-tracking data model (spec §1)
+// -----------------------------------------------------------------------------
+
+export type QuitCategory =
+  | 'smoking'
+  | 'weed'
+  | 'alcohol'
+  | 'porn'
+  | 'sugar'
+  | 'custom';
+
+export interface Quit {
+  /** Unique id for this quit attempt series */
+  id: string;
+  category: QuitCategory;
+  /** Free text when category === 'custom' */
+  customName?: string;
+  /** ISO timestamp of the current streak start */
+  startDate: string;
+  /** 1–3 personal reasons, onboarding-captured, rotated on Home */
+  reasons: string[];
+  /** Money/day spent before quitting (0 if unknown) */
+  dailyCost: number;
+  /** Minutes/day reclaimed (0 if unknown) */
+  dailyMinutes: number;
+  /** "07:00" local — daily pledge reminder time */
+  pledgeTime: string;
+  /** All-time best, survives relapses */
+  longestStreakDays: number;
+  totalRelapses: number;
+}
+
+export interface PledgeState {
+  /** Local YYYY-MM-DD of the last pledge, null if never */
+  lastPledgeDayKey: string | null;
+  /** Consecutive pledged days. A miss resets to 0; NEVER touches the clean streak */
+  pledgeStreak: number;
+}
+
+export interface RelapseEntry {
+  /** ISO timestamp of the slip */
+  date: string;
+  daysCleanBefore: number;
+  note?: string;
+}
+
+export interface JournalEntry {
+  id: string;
+  /** Local YYYY-MM-DD */
+  dayKey: string;
+  craving: 1 | 2 | 3 | 4 | 5 | null;
+  note: string;
+  voiceUri?: string;
+  /** ISO timestamp */
+  createdAt: string;
+}
+
+export type OrbTheme = 'dawn' | 'ember' | 'tide';
+export type ShareCardStyle = 'classic' | 'noir';
+
+export interface AppSettings {
+  pledgeReminder: boolean;
+  milestoneAlerts: boolean;
+  /** premium unlocks ember/tide */
+  orbTheme: OrbTheme;
+  /** premium unlocks noir */
+  shareCardStyle: ShareCardStyle;
+}
+
+export interface AppState {
+  schemaVersion: 2;
+  /** null = onboarding not completed → route guard sends to /onboarding */
+  quit: Quit | null;
+  pledge: PledgeState;
+  relapseLog: RelapseEntry[];
+  journal: JournalEntry[];
+  /** Celebrated milestone day-counts */
+  milestonesSeen: number[];
+  /** ISO timestamps of completed urge-surf sessions */
+  urgeSurfs: string[];
+  settings: AppSettings;
+}
+
+export const QUIT_CATEGORIES: readonly QuitCategory[] = [
+  'smoking',
+  'weed',
+  'alcohol',
+  'porn',
+  'sugar',
+  'custom',
+] as const;
+
+export const QUIT_CATEGORY_LABELS: Record<QuitCategory, string> = {
+  smoking: 'Smoking',
+  weed: 'Weed',
+  alcohol: 'Alcohol',
+  porn: 'Porn',
+  sugar: 'Sugar',
+  custom: 'Something else',
+};
+
+export function isQuitCategory(raw: unknown): raw is QuitCategory {
+  return (
+    typeof raw === 'string' &&
+    (QUIT_CATEGORIES as readonly string[]).includes(raw)
+  );
+}
+
+function isNonNegativeNumber(raw: unknown): raw is number {
+  return typeof raw === 'number' && !isNaN(raw) && raw >= 0;
+}
+
+function isNonNegativeInt(raw: unknown): raw is number {
+  return isNonNegativeNumber(raw) && Number.isInteger(raw);
+}
+
+export function isQuit(raw: unknown): raw is Quit {
+  if (!raw || typeof raw !== 'object') return false;
+  const q = raw as Partial<Quit>;
+  return (
+    typeof q.id === 'string' &&
+    q.id.length > 0 &&
+    isQuitCategory(q.category) &&
+    (q.customName === undefined || typeof q.customName === 'string') &&
+    typeof q.startDate === 'string' &&
+    !isNaN(Date.parse(q.startDate)) &&
+    Array.isArray(q.reasons) &&
+    q.reasons.length >= 1 &&
+    q.reasons.length <= 3 &&
+    q.reasons.every((r) => typeof r === 'string' && r.length > 0) &&
+    isNonNegativeNumber(q.dailyCost) &&
+    isNonNegativeNumber(q.dailyMinutes) &&
+    typeof q.pledgeTime === 'string' &&
+    /^\d{2}:\d{2}$/.test(q.pledgeTime) &&
+    isNonNegativeInt(q.longestStreakDays) &&
+    isNonNegativeInt(q.totalRelapses)
+  );
+}
+
+const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function isPledgeState(raw: unknown): raw is PledgeState {
+  if (!raw || typeof raw !== 'object') return false;
+  const p = raw as Partial<PledgeState>;
+  return (
+    (p.lastPledgeDayKey === null ||
+      (typeof p.lastPledgeDayKey === 'string' &&
+        DAY_KEY_RE.test(p.lastPledgeDayKey))) &&
+    isNonNegativeInt(p.pledgeStreak)
+  );
+}
+
+export function isRelapseEntry(raw: unknown): raw is RelapseEntry {
+  if (!raw || typeof raw !== 'object') return false;
+  const r = raw as Partial<RelapseEntry>;
+  return (
+    typeof r.date === 'string' &&
+    !isNaN(Date.parse(r.date)) &&
+    isNonNegativeNumber(r.daysCleanBefore) &&
+    (r.note === undefined || typeof r.note === 'string')
+  );
+}
+
+export function isJournalEntry(raw: unknown): raw is JournalEntry {
+  if (!raw || typeof raw !== 'object') return false;
+  const j = raw as Partial<JournalEntry>;
+  return (
+    typeof j.id === 'string' &&
+    typeof j.dayKey === 'string' &&
+    DAY_KEY_RE.test(j.dayKey) &&
+    (j.craving === null ||
+      (typeof j.craving === 'number' &&
+        Number.isInteger(j.craving) &&
+        j.craving >= 1 &&
+        j.craving <= 5)) &&
+    typeof j.note === 'string' &&
+    (j.voiceUri === undefined || typeof j.voiceUri === 'string') &&
+    typeof j.createdAt === 'string' &&
+    !isNaN(Date.parse(j.createdAt))
+  );
+}
+
+export function isAppState(raw: unknown): raw is AppState {
+  if (!raw || typeof raw !== 'object') return false;
+  const s = raw as Partial<AppState>;
+  const settings = s.settings as Partial<AppSettings> | undefined;
+  return (
+    s.schemaVersion === 2 &&
+    (s.quit === null || isQuit(s.quit)) &&
+    isPledgeState(s.pledge) &&
+    Array.isArray(s.relapseLog) &&
+    s.relapseLog.every(isRelapseEntry) &&
+    Array.isArray(s.journal) &&
+    s.journal.every(isJournalEntry) &&
+    Array.isArray(s.milestonesSeen) &&
+    s.milestonesSeen.every(isNonNegativeInt) &&
+    Array.isArray(s.urgeSurfs) &&
+    s.urgeSurfs.every(
+      (u) => typeof u === 'string' && !isNaN(Date.parse(u))
+    ) &&
+    Boolean(settings) &&
+    typeof settings!.pledgeReminder === 'boolean' &&
+    typeof settings!.milestoneAlerts === 'boolean' &&
+    (settings!.orbTheme === 'dawn' ||
+      settings!.orbTheme === 'ember' ||
+      settings!.orbTheme === 'tide') &&
+    (settings!.shareCardStyle === 'classic' ||
+      settings!.shareCardStyle === 'noir')
+  );
+}
