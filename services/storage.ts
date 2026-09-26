@@ -60,7 +60,7 @@ export const DEFAULT_APP_STATE: AppStateData = {
  * stored payloads. This is an integrity check, not cryptography — it catches
  * truncated writes, manual tampering, and restore glitches, nothing more.
  */
-function fnv1a32(input: string): string {
+export function fnv1a32(input: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < input.length; i++) {
     hash ^= input.charCodeAt(i);

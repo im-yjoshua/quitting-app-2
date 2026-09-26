@@ -38,12 +38,13 @@ import {
   scheduleRelapsePlusOne,
 } from '../services/notifications';
 import { applyRelapse } from '../services/relapse';
+import { markMilestonesSeenPure } from '../services/milestones';
 import {
   addJournalEntry,
   createJournalEntry,
   deleteJournalEntry,
 } from '../services/journal';
-import type { JournalEntry, RelapseEntry } from '../types/app';
+import type { AppSettings, JournalEntry, RelapseEntry } from '../types/app';
 
 interface AppStateContextValue {
   /** null while loading */
@@ -63,6 +64,10 @@ interface AppStateContextValue {
     craving: 1 | 2 | 3 | 4 | 5 | null
   ) => Promise<JournalEntry>;
   removeJournalEntry: (id: string) => Promise<void>;
+  /** Merges newly-celebrated milestone day-counts into milestonesSeen. */
+  markMilestonesSeen: (days: number[]) => Promise<void>;
+  /** Patches settings (notification toggles, orb theme, share card style). */
+  updateSettings: (partial: Partial<AppSettings>) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -194,6 +199,26 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setState(next);
   }, []);
 
+  const markMilestonesSeen = useCallback(async (days: number[]): Promise<void> => {
+    if (days.length === 0) return;
+    const next = await updateAppState((prev) => ({
+      ...prev,
+      milestonesSeen: markMilestonesSeenPure(prev.milestonesSeen, days),
+    }));
+    setState(next);
+  }, []);
+
+  const updateSettings = useCallback(
+    async (partial: Partial<AppSettings>): Promise<void> => {
+      const next = await updateAppState((prev) => ({
+        ...prev,
+        settings: { ...prev.settings, ...partial },
+      }));
+      setState(next);
+    },
+    []
+  );
+
   const value = useMemo<AppStateContextValue>(
     () => ({
       state,
@@ -205,6 +230,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       logUrgeSurf,
       addJournal,
       removeJournalEntry,
+      markMilestonesSeen,
+      updateSettings,
       refresh,
     }),
     [
@@ -217,6 +244,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       logUrgeSurf,
       addJournal,
       removeJournalEntry,
+      markMilestonesSeen,
+      updateSettings,
       refresh,
     ]
   );

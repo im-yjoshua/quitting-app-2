@@ -14,6 +14,8 @@ import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { exportTelemetryBackup } from './storage';
 
+type Exporter = () => Promise<{ success: boolean; data?: string; error?: string }>;
+
 export interface BackupFileResult {
   readonly success: boolean;
   readonly fileName?: string;
@@ -31,12 +33,17 @@ function backupFileName(now: number): string {
 }
 
 /**
- * Serializes the current app state into a checksummed, timestamped JSON file
+ * Serializes app state into a checksummed, timestamped JSON file
  * in the app's document directory. Returns the file URI for sharing.
+ *
+ * The exporter defaults to the legacy telemetry export; pass the v2
+ * exporter to back up the real v2 AppState.
  */
-export async function createBackupFile(): Promise<BackupFileResult> {
-  const exported = await exportTelemetryBackup();
-  if (!exported.success) {
+export async function createBackupFile(
+  exporter: Exporter = exportTelemetryBackup
+): Promise<BackupFileResult> {
+  const exported = await exporter();
+  if (!exported.success || !exported.data) {
     return {
       success: false,
       error: exported.error,

@@ -28,12 +28,16 @@ import {
 } from 'react-native';
 
 import { Orb } from '../../../components/Orb';
+import { CelebrationSheet } from '../../../components/CelebrationSheet';
+import { ShareCardSheet } from '../../../components/ShareCardSheet';
 import { GlassButton } from '../../../components/glass/GlassButton';
 import { GlassCard } from '../../../components/glass/GlassCard';
 import { Screen } from '../../../components/glass/Screen';
 import { MS_PER_DAY } from '../../../services/chronometerEngine';
 import { hasPledgedToday } from '../../../services/pledge';
 import { useAppState } from '../../../state/AppStateContext';
+import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
+import { usePremium } from '../../../hooks/usePremium';
 import { colors, spacing, type } from '../../../theme/tokens';
 
 const REASON_ROTATE_MS = 8000;
@@ -83,6 +87,8 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sheetVisible, setSheetVisible] = useState(false);
+  const celebration = useMilestoneCelebration();
+  const isPremium = usePremium();
 
   // 1s live tick, paused while backgrounded.
   useEffect(() => {
@@ -238,6 +244,30 @@ export default function HomeScreen() {
         nowMs={nowMs}
         startMs={Date.parse(quit.startDate)}
       />
+
+      {celebration.celebration !== null && (
+        <CelebrationSheet
+          visible
+          milestone={celebration.celebration}
+          onShare={celebration.openShare}
+          onDismiss={celebration.dismissCelebration}
+        />
+      )}
+
+      {celebration.celebration !== null && (
+        <ShareCardSheet
+          visible={celebration.shareOpen}
+          days={celebration.celebration}
+          category={quit.category}
+          customName={quit.customName}
+          isPremium={isPremium}
+          onRequestPremium={() => {
+            celebration.closeShare();
+            router.push('/paywall');
+          }}
+          onClose={celebration.closeShare}
+        />
+      )}
     </Screen>
   );
 }

@@ -1,6 +1,8 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 
+import { MS_PER_DAY } from './chronometerEngine';
+
 // Configure on-device notification presentation behavior
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -142,3 +144,44 @@ export async function scheduleDailyCheckIn(
   }
 }
 
+
+export const MILESTONE_EVE_IDENTIFIER = 'sovereign_milestone_eve';
+
+/**
+ * Milestone eve (spec §5): "Tomorrow is day {n}. You've earned it." —
+ * fires once at 9 PM local on the calendar day before the milestone is
+ * reached. Re-scheduling replaces any earlier one, so the next upcoming
+ * milestone is always the one announced.
+ */
+export async function scheduleMilestoneEve(
+  milestoneDay: number,
+  startDateMs: number,
+  nowMs: number
+): Promise<void> {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return;
+    // The milestone lands when the streak crosses milestoneDay whole days;
+    // the eve alert goes out at 9 PM local the day before.
+    const eve = new Date(startDateMs + milestoneDay * MS_PER_DAY);
+    eve.setDate(eve.getDate() - 1);
+    eve.setHours(21, 0, 0, 0);
+    if (eve.getTime() <= nowMs) return; // eve already passed — skip
+    await cancelScheduledNotification(MILESTONE_EVE_IDENTIFIER);
+    await Notifications.scheduleNotificationAsync({
+      identifier: MILESTONE_EVE_IDENTIFIER,
+      content: {
+        title: 'Sovereign',
+        body: `Tomorrow is day ${milestoneDay}. You've earned it.`,
+        sound: true,
+        data: { type: 'milestone_eve', milestoneDay },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: eve,
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to schedule milestone eve notification:', error);
+  }
+}
