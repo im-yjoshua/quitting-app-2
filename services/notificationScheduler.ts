@@ -20,21 +20,21 @@ export const CADENCE_NOTIFICATION_IDENTIFIERS = {
 } as const;
 
 const MORNING_MESSAGES = [
-  "Morning Directive: 45 minutes of physical strain before sundown. Hold the standard.",
-  "Morning Directive: Map your intent. Execute with precision today.",
-  "Morning Directive: Protect your early hours. Clarity dictates victory.",
+  "Today is a new day. Pledge it. 🌅",
+  "Your future self is counting on today.",
+  "One pledge. One day. You've got this.",
 ];
 
 const MIDDAY_MESSAGES = [
-  "Midday Anchor: Dopamine urges peak and pass in 10 minutes. Stay centered.",
-  "Midday Anchor: Recalibrate your focus. The afternoon requires discipline.",
-  "Midday Anchor: Do not negotiate with temporary cravings. Breathe.",
+  "Urges peak and pass in ~20 minutes. Ride it out. 🌊",
+  "Halfway through the day — it's still yours.",
+  "Breathe. The craving will pass; the streak stays.",
 ];
 
 const EVENING_MESSAGES = [
-  "Evening Audit: Close today's quests and log your daily voice reflection.",
-  "Evening Audit: Screen-free time approaches. Disconnect and recover.",
-  "Evening Audit: Review the day. What did you conquer? What needs tuning?",
+  "How was today? Log a check-in in your journal.",
+  "End the day clean. You earned it.",
+  "One honest day. That's all it ever takes.",
 ];
 
 function getRandomMessage(pool: string[]) {
