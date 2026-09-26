@@ -1,0 +1,1 @@
+{"compilerOptions":{"esModuleInterop":true,"ignoreDeprecations":"6.0","isolatedModules":true,"module":"commonjs","moduleResolution":"bundler","skipLibCheck":true,"strict":true,"target":"ES2020","types":["jest","node"]}}
