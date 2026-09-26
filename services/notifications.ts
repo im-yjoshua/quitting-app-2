@@ -13,6 +13,35 @@ Notifications.setNotificationHandler({
 });
 
 export const DAILY_ENCOURAGEMENT_IDENTIFIER = 'sovereign_daily_encouragement';
+export const RELAPSE_PLUS_ONE_IDENTIFIER = 'sovereign_relapse_plus_one';
+
+/**
+ * "Day 1 again — and that's okay. Pledge it." — fires once, 24h after a
+ * slip (spec §5). Re-scheduling replaces any earlier one so only the
+ * latest relapse's reminder survives.
+ */
+export async function scheduleRelapsePlusOne(nowMs: number): Promise<void> {
+  try {
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) return;
+    await cancelScheduledNotification(RELAPSE_PLUS_ONE_IDENTIFIER);
+    await Notifications.scheduleNotificationAsync({
+      identifier: RELAPSE_PLUS_ONE_IDENTIFIER,
+      content: {
+        title: 'Sovereign',
+        body: "Day 1 again — and that's okay. Pledge it.",
+        sound: true,
+        data: { type: 'relapse_plus_one' },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: new Date(nowMs + 24 * 3_600_000),
+      },
+    });
+  } catch (error) {
+    console.warn('Failed to schedule relapse +1 notification:', error);
+  }
+}
 
 /**
  * Request local push notification permissions securely on-device.

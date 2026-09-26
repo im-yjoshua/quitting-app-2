@@ -20,6 +20,7 @@ import type { AppState } from '../types/app';
 import {
   loadAppState,
   saveAppState,
+  updateAppState,
 } from '../services/appStateStore';
 import {
   applyMissedPledgeReset,
@@ -34,7 +35,15 @@ import {
 import {
   requestNotificationPermissions,
   scheduleDailyCheckIn,
+  scheduleRelapsePlusOne,
 } from '../services/notifications';
+import { applyRelapse } from '../services/relapse';
+import {
+  addJournalEntry,
+  createJournalEntry,
+  deleteJournalEntry,
+} from '../services/journal';
+import type { JournalEntry, RelapseEntry } from '../types/app';
 
 interface AppStateContextValue {
   /** null while loading */
@@ -44,6 +53,16 @@ interface AppStateContextValue {
   /** Records today's pledge. Resolves true when it counted, false on double-pledge. */
   pledgeNow: () => Promise<boolean>;
   pledgedToday: (nowMs: number) => boolean;
+  /** Logs a slip compassionately. Returns the appended entry. */
+  logRelapse: (note?: string) => Promise<RelapseEntry>;
+  /** Records a completed urge-surf session. */
+  logUrgeSurf: () => Promise<void>;
+  /** Saves a text check-in. Returns the created entry. */
+  addJournal: (
+    note: string,
+    craving: 1 | 2 | 3 | 4 | 5 | null
+  ) => Promise<JournalEntry>;
+  removeJournalEntry: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -120,9 +139,86 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [state]
   );
 
+  const logRelapse = useCallback(
+    async (note?: string): Promise<RelapseEntry> => {
+      const nowMs = Date.now();
+      let entry: RelapseEntry | null = null;
+      const next = await updateAppState((prev) => {
+        const applied = applyRelapse(prev, nowMs, note);
+        entry = applied.entry;
+        return applied.state;
+      });
+      setState(next);
+      // Relapse +1 day (spec §5): "Day 1 again — and that's okay. Pledge it."
+      // Best-effort; a denied permission just skips it.
+      try {
+        await scheduleRelapsePlusOne(nowMs);
+      } catch {
+        // Local notifications are best-effort.
+      }
+      if (!entry) throw new Error('Relapse entry was not created');
+      return entry;
+    },
+    []
+  );
+
+  const logUrgeSurf = useCallback(async (): Promise<void> => {
+    const iso = new Date(Date.now()).toISOString();
+    const next = await updateAppState((prev) => ({
+      ...prev,
+      urgeSurfs: [...prev.urgeSurfs, iso],
+    }));
+    setState(next);
+  }, []);
+
+  const addJournal = useCallback(
+    async (
+      note: string,
+      craving: 1 | 2 | 3 | 4 | 5 | null
+    ): Promise<JournalEntry> => {
+      const nowMs = Date.now();
+      let entry: JournalEntry | null = null;
+      const next = await updateAppState((prev) => {
+        entry = createJournalEntry(note, craving, nowMs);
+        return addJournalEntry(prev, entry);
+      });
+      setState(next);
+      if (!entry) throw new Error('Journal entry was not created');
+      return entry;
+    },
+    []
+  );
+
+  const removeJournalEntry = useCallback(async (id: string): Promise<void> => {
+    const next = await updateAppState((prev) => deleteJournalEntry(prev, id));
+    setState(next);
+  }, []);
+
   const value = useMemo<AppStateContextValue>(
-    () => ({ state, loading, completeOnboarding, pledgeNow, pledgedToday, refresh }),
-    [state, loading, completeOnboarding, pledgeNow, pledgedToday, refresh]
+    () => ({
+      state,
+      loading,
+      completeOnboarding,
+      pledgeNow,
+      pledgedToday,
+      logRelapse,
+      logUrgeSurf,
+      addJournal,
+      removeJournalEntry,
+      refresh,
+    }),
+    [
+      state,
+      loading,
+      completeOnboarding,
+      pledgeNow,
+      pledgedToday,
+      logRelapse,
+      logUrgeSurf,
+      addJournal,
+      removeJournalEntry,
+      refresh,
+    ]
   );
 
   return (
