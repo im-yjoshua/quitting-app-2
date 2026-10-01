@@ -228,8 +228,12 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.counter}>
-          <Text style={styles.dayLabel}>
-            DAY {cleanDays.toLocaleString('en-US')}
+          <Text style={styles.streakEyebrow}>CURRENT STREAK</Text>
+          <Text style={styles.dayNumber}>
+            {cleanDays.toLocaleString('en-US')}
+          </Text>
+          <Text style={styles.dayCaption}>
+            day{cleanDays === 1 ? '' : 's'} clean
           </Text>
           <Text style={styles.counterLine}>{counterLine}</Text>
         </View>
@@ -317,8 +321,26 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
   },
   counter: { alignItems: 'center', marginTop: spacing.sm },
-  dayLabel: { ...type.hero, color: colors.text },
-  counterLine: { ...type.callout, color: colors.textSecondary, marginTop: spacing.xs },
+  streakEyebrow: {
+    ...type.micro,
+    color: colors.textTertiary,
+    letterSpacing: 3,
+  },
+  dayNumber: {
+    fontSize: 72,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -2,
+    lineHeight: 80,
+    marginTop: spacing.xs,
+  },
+  dayCaption: { ...type.callout, color: colors.textSecondary, marginTop: 2 },
+  counterLine: {
+    ...type.caption,
+    color: colors.textTertiary,
+    marginTop: spacing.xs,
+    fontVariant: ['tabular-nums'],
+  },
   pledgeWrap: { marginTop: spacing.lg },
   reason: {
     ...type.body,

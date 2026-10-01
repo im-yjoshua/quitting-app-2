@@ -54,6 +54,12 @@ function formatDuration(millis: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+function cravingSeverityColor(value: number): string {
+  if (value <= 2) return colors.success;
+  if (value === 3) return colors.warning;
+  return colors.danger;
+}
+
 function TextEntryRow({
   entry,
   onDelete,
@@ -80,6 +86,14 @@ function TextEntryRow({
       delayLongPress={500}
       style={styles.entry}
     >
+      {entry.craving !== null && (
+        <View
+          style={[
+            styles.severityBar,
+            { backgroundColor: cravingSeverityColor(entry.craving) },
+          ]}
+        />
+      )}
       <View style={styles.entryTop}>
         {entry.craving !== null && (
           <View style={styles.cravingChip}>
@@ -400,6 +414,16 @@ const styles = StyleSheet.create({
     borderColor: colors.hairline,
     padding: spacing.md,
     gap: spacing.xs,
+    overflow: 'hidden',
+  },
+  severityBar: {
+    position: 'absolute',
+    left: 0,
+    top: spacing.sm,
+    bottom: spacing.sm,
+    width: 4,
+    borderTopRightRadius: 2,
+    borderBottomRightRadius: 2,
   },
   entryTop: {
     flexDirection: 'row',

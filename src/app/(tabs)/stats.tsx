@@ -129,12 +129,12 @@ export default function StatsScreen() {
       >
         <Text style={styles.title}>Stats</Text>
 
-        {/* Hero numbers */}
+        {/* Hero numbers — money saved is the hero metric */}
+        <GlassCard style={styles.moneyCard}>
+          <Text style={styles.moneyLabel}>saved so far</Text>
+          <Text style={styles.moneyValue}>{formatMoney(moneyLive)}</Text>
+        </GlassCard>
         <View style={styles.heroGrid}>
-          <GlassCard style={styles.heroCard}>
-            <Text style={styles.heroValue}>{formatMoney(moneyLive)}</Text>
-            <Text style={styles.heroLabel}>saved</Text>
-          </GlassCard>
           <GlassCard style={styles.heroCard}>
             <Text style={styles.heroValue}>
               {formatTimeReclaimed(reclaimed.hours, reclaimed.minutes)}
@@ -162,6 +162,31 @@ export default function StatsScreen() {
           <Text style={styles.cardTitle}>Last 12 weeks</Text>
           <Text style={styles.cardSub}>Every clean day, at a glance.</Text>
           <Heatmap days={heat} width={width - spacing.lg * 4} />
+          <View style={styles.legend}>
+            <Text style={styles.legendText}>Less</Text>
+            <View style={styles.legendSwatches}>
+              <View style={[styles.legendSwatch, styles.legendEmpty]} />
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: colors.accent, opacity: 0.35 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: colors.accent, opacity: 0.65 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.legendSwatch,
+                  { backgroundColor: colors.accent, opacity: 0.9 },
+                ]}
+              />
+            </View>
+            <Text style={styles.legendText}>More</Text>
+          </View>
         </GlassCard>
 
         {/* Health timeline */}
@@ -304,15 +329,28 @@ const styles = StyleSheet.create({
   title: { ...type.title, color: colors.text, marginBottom: spacing.md },
   heroGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: spacing.sm,
     marginBottom: spacing.md,
   },
   heroCard: {
-    flexBasis: '48%',
+    flexBasis: '31%',
     flexGrow: 1,
     alignItems: 'center',
     paddingVertical: spacing.md,
+  },
+  moneyCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.sm,
+  },
+  moneyLabel: { ...type.micro, color: colors.textTertiary, letterSpacing: 2 },
+  moneyValue: {
+    fontSize: 34,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -1,
+    marginTop: 4,
+    fontVariant: ['tabular-nums'],
   },
   heroValue: { ...type.headline, color: colors.text },
   heroLabel: { ...type.caption, color: colors.textSecondary, marginTop: 2 },
@@ -326,6 +364,21 @@ const styles = StyleSheet.create({
   heatRow: { flexDirection: 'row', gap: CELL_GAP },
   heatCol: { flex: 1 },
   heatCell: {},
+  legend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  legendText: { ...type.caption, color: colors.textTertiary },
+  legendSwatches: { flexDirection: 'row', gap: 3 },
+  legendSwatch: { width: 11, height: 11, borderRadius: 3 },
+  legendEmpty: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    backgroundColor: 'transparent',
+  },
   sectionTitle: {
     ...type.headline,
     color: colors.text,

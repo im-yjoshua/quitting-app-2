@@ -57,7 +57,7 @@ function Stepper({
         accessibilityRole="button"
         accessibilityLabel={`Decrease ${label}`}
         onPress={() => step(-1)}
-        style={styles.stepperBtn}
+        style={({ pressed }) => [styles.stepperBtn, pressed && styles.pressed]}
       >
         <Text style={styles.stepperGlyph}>−</Text>
       </Pressable>
@@ -69,7 +69,7 @@ function Stepper({
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
         onPress={() => step(1)}
-        style={styles.stepperBtn}
+        style={({ pressed }) => [styles.stepperBtn, pressed && styles.pressed]}
       >
         <Text style={styles.stepperGlyph}>+</Text>
       </Pressable>
@@ -165,7 +165,11 @@ export default function OnboardingScreen() {
                     key={c}
                     accessibilityRole="button"
                     onPress={() => setCategory(c)}
-                    style={[styles.chip, selected && styles.chipSelected]}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      selected && styles.chipSelected,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                       {QUIT_CATEGORY_LABELS[c]}
@@ -216,7 +220,11 @@ export default function OnboardingScreen() {
                     key={v}
                     accessibilityRole="button"
                     onPress={() => setDailyCost(v)}
-                    style={[styles.preset, dailyCost === v && styles.presetSelected]}
+                    style={({ pressed }) => [
+                      styles.preset,
+                      dailyCost === v && styles.presetSelected,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Text style={[styles.presetText, dailyCost === v && styles.presetTextSelected]}>
                       {v === 0 ? 'Skip' : `$${v}`}
@@ -231,7 +239,11 @@ export default function OnboardingScreen() {
                     key={v}
                     accessibilityRole="button"
                     onPress={() => setDailyMinutes(v)}
-                    style={[styles.preset, dailyMinutes === v && styles.presetSelected]}
+                    style={({ pressed }) => [
+                      styles.preset,
+                      dailyMinutes === v && styles.presetSelected,
+                      pressed && styles.pressed,
+                    ]}
                   >
                     <Text style={[styles.presetText, dailyMinutes === v && styles.presetTextSelected]}>
                       {v === 0 ? 'Skip' : `${v}m`}
@@ -252,7 +264,7 @@ export default function OnboardingScreen() {
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setAmpm(ampm === 'AM' ? 'PM' : 'AM')}
-                  style={styles.ampm}
+                  style={({ pressed }) => [styles.ampm, pressed && styles.pressed]}
                 >
                   <Text style={styles.ampmText}>{ampm}</Text>
                 </Pressable>
@@ -372,4 +384,5 @@ const styles = StyleSheet.create({
   },
   ampmText: { ...type.callout, color: colors.text, fontWeight: '700' },
   footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+  pressed: { opacity: 0.7 },
 });
