@@ -462,7 +462,7 @@ const styles = StyleSheet.create({
   stepperValue: { alignItems: 'center', minWidth: 56 },
   stepperLabel: { ...type.caption },
   stepperNumber: { ...type.title1 },
-  tabular: { fontVariant: ['tabular-nums'] },
+  tabular: { ...type.tabular },
   ampm: {
     minHeight: 44,
     paddingHorizontal: spacing.md,

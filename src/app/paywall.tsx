@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   heroTag: { ...type.caption, fontWeight: '700' },
   tierNote: { ...type.caption },
   tierPrice: { ...type.title2, marginRight: spacing.sm },
-  tabular: { fontVariant: ['tabular-nums'] },
+  tabular: { ...type.tabular },
   radio: {
     width: 24,
     height: 24,

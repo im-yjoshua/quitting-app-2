@@ -814,6 +814,6 @@ const styles = StyleSheet.create({
   },
   stat: { alignItems: 'center', flex: 1 },
   statValue: { ...type.title1 },
-  tabular: { fontVariant: ['tabular-nums'] },
+  tabular: { ...type.tabular },
   statLabel: { ...type.caption, marginTop: 2 },
 });

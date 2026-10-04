@@ -567,5 +567,5 @@ const styles = StyleSheet.create({
   },
   upsellCta: { alignSelf: 'stretch', marginTop: spacing.sm },
   skelTitle: { marginBottom: spacing.md },
-  tabular: { fontVariant: ['tabular-nums'] },
+  tabular: { ...type.tabular },
 });

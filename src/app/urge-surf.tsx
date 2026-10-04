@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   timer: { ...type.headline },
-  tabular: { fontVariant: ['tabular-nums'] },
+  tabular: { ...type.tabular },
   progressTrack: {
     width: '60%',
     height: 4,

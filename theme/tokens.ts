@@ -174,8 +174,10 @@ export const type = {
   // Legacy aliases (pre-redesign screens) — mapped onto the HIG scale.
   hero: { fontSize: 34, fontWeight: '700' as const, letterSpacing: 0.3 },
   title: { fontSize: 28, fontWeight: '700' as const, letterSpacing: 0.2 },
-  /** Tabular numerals for every counter, timer, and money readout. */
-  tabular: { fontVariant: ['tabular-nums'] as const },
+  /** Tabular numerals for every counter, timer, and money readout. Spreads into Text styles. */
+  tabular: {
+    fontVariant: ['tabular-nums'] as unknown as import('react-native').FontVariant[],
+  },
 } as const;
 
 /**

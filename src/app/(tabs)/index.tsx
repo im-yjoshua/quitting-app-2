@@ -75,7 +75,7 @@ function ExactTimeSheet({
         <Text
           style={[
             styles.sheetTime,
-            { color: theme.colors.text, fontVariant: ['tabular-nums'] },
+            { color: theme.colors.text, ...type.tabular },
           ]}
         >
           {days}d {String(hours).padStart(2, '0')}h{' '}
@@ -242,7 +242,7 @@ export default function HomeScreen() {
           <Text
             style={[
               styles.dayNumber,
-              { color: theme.colors.text, fontVariant: ['tabular-nums'] },
+              { color: theme.colors.text, ...type.tabular },
             ]}
           >
             {cleanDays.toLocaleString('en-US')}
@@ -253,7 +253,7 @@ export default function HomeScreen() {
           <Text
             style={[
               styles.counterLine,
-              { color: theme.colors.metadata, fontVariant: ['tabular-nums'] },
+              { color: theme.colors.metadata, ...type.tabular },
             ]}
           >
             {counterLine}
