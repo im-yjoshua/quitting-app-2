@@ -1,24 +1,24 @@
 /**
- * Home — the soul of the app (spec §2.2).
+ * Home — the soul of the app.
  *
- * Layout top→bottom:
- * - The Orb (hero, ~55% of viewport): living liquid-glass sphere, tap for
- *   the exact clean-time sheet.
- * - Clean time: `DAY 47` + live-ticking `1,128 h 24 m 10 s` (1s, pauses when
- *   backgrounded).
- * - Pledge button: full-width glass CTA. "Pledge today" → tap → haptic →
- *   "Pledged ✓ · N-day pledge streak".
- * - Rotating reason (8s fade) — the emotional hook from onboarding.
- * - "Craving right now?" → Urge Surf. "I slipped" (quiet, shame-free) → Relapse.
+ * Monochrome canvas; the Orb is the only color story. Top→bottom:
+ * - The Orb (hero): living glass sphere, tap for the exact clean-time sheet.
+ * - DAY 47 — giant full-brightness numeral + live-ticking counter below.
+ * - Pledge button: inverted primary. "Pledge today" → "Pledged ✓ · streak".
+ * - Rotating reason (slow 12s crossfade) — the emotional hook.
+ * - "Craving right now?" (quiet accent link) → Urge Surf.
+ *   "I slipped" (quiet) → Relapse.
+ *
+ * Logic (pledge flow, route guard, milestone + share wiring, 1s tick) is
+ * unchanged from the pre-redesign build — this file is a visual recomposition.
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
   AppState as RNAppState,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,19 +28,21 @@ import {
 } from 'react-native';
 
 import { Orb } from '../../../components/Orb';
+import type { OrbTheme } from '../../../types/app';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
 import { GlassButton } from '../../../components/glass/GlassButton';
-import { GlassCard } from '../../../components/glass/GlassCard';
 import { Screen } from '../../../components/glass/Screen';
+import { Sheet } from '../../../components/glass/Sheet';
 import { MS_PER_DAY } from '../../../services/chronometerEngine';
 import { hasPledgedToday } from '../../../services/pledge';
 import { useAppState } from '../../../state/AppStateContext';
 import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
 import { usePremium } from '../../../hooks/usePremium';
-import { colors, spacing, type } from '../../../theme/tokens';
+import { useTheme } from '../../../theme/useTheme';
+import { spacing, type } from '../../../theme/tokens';
 
-const REASON_ROTATE_MS = 8000;
+const REASON_ROTATE_MS = 12000;
 
 function ExactTimeSheet({
   visible,
@@ -53,6 +55,7 @@ function ExactTimeSheet({
   nowMs: number;
   startMs: number;
 }) {
+  const theme = useTheme();
   const cleanMs = Math.max(0, nowMs - startMs);
   const days = Math.floor(cleanMs / MS_PER_DAY);
   const hours = Math.floor(cleanMs / 3_600_000) % 24;
@@ -64,26 +67,60 @@ function ExactTimeSheet({
     year: 'numeric',
   });
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable onPress={(e) => e.stopPropagation()}>
-          <GlassCard style={styles.sheetCard}>
-            <Text style={styles.sheetEyebrow}>EXACT CLEAN TIME</Text>
-            <Text style={styles.sheetTime}>
-              {days}d {String(hours).padStart(2, '0')}h {String(minutes).padStart(2, '0')}m{' '}
-              {String(seconds).padStart(2, '0')}s
-            </Text>
-            <Text style={styles.sheetSub}>Clean since {started}</Text>
-            <GlassButton title="Close" onPress={onClose} tone="neutral" style={styles.sheetBtn} />
-          </GlassCard>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.sheetInner}>
+        <Text style={[styles.sheetEyebrow, { color: theme.colors.metadata }]}>
+          EXACT CLEAN TIME
+        </Text>
+        <Text
+          style={[
+            styles.sheetTime,
+            { color: theme.colors.text, fontVariant: ['tabular-nums'] },
+          ]}
+        >
+          {days}d {String(hours).padStart(2, '0')}h{' '}
+          {String(minutes).padStart(2, '0')}m {String(seconds).padStart(2, '0')}s
+        </Text>
+        <Text style={[styles.sheetSub, { color: theme.colors.metadata }]}>
+          Clean since {started}
+        </Text>
+        <GlassButton
+          title="Close"
+          onPress={onClose}
+          variant="primary"
+          style={styles.sheetBtn}
+        />
+      </View>
+    </Sheet>
+  );
+}
+
+function OrbHero({
+  theme,
+  cleanMs,
+  size,
+  onPress,
+}: {
+  theme: OrbTheme;
+  cleanMs: number;
+  size: number;
+  onPress: () => void;
+}) {
+  return (
+    <View style={styles.orbHero}>
+      <Orb
+        cleanDays={cleanMs / MS_PER_DAY}
+        theme={theme}
+        size={size}
+        onPress={onPress}
+      />
+    </View>
   );
 }
 
 export default function HomeScreen() {
   const { state, loading, pledgeNow } = useAppState();
+  const theme = useTheme();
   const { width } = useWindowDimensions();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sheetVisible, setSheetVisible] = useState(false);
@@ -126,22 +163,25 @@ export default function HomeScreen() {
 
   const quit = state?.quit;
 
-  // Rotating reasons — 8s fade between the onboarding-captured reasons.
+  // Rotating reasons — slow 12s crossfade between the onboarding-captured
+  // reasons. Ambient, not decorative: it's the emotional hook of the screen.
   const reasons = quit?.reasons ?? [];
   const [reasonIdx, setReasonIdx] = useState(0);
-  const reasonFade = useRef(new Animated.Value(1)).current;
+  // useState (not useRef().current) holds the Animated.Value — the
+  // react-hooks/refs lint rule forbids reading ref values during render.
+  const [reasonFade] = useState(() => new Animated.Value(1));
   useEffect(() => {
     if (reasons.length < 2) return;
     const id = setInterval(() => {
       Animated.timing(reasonFade, {
         toValue: 0,
-        duration: 400,
+        duration: 600,
         useNativeDriver: true,
       }).start(() => {
         setReasonIdx((i) => (i + 1) % reasons.length);
         Animated.timing(reasonFade, {
           toValue: 1,
-          duration: 400,
+          duration: 600,
           useNativeDriver: true,
         }).start();
       });
@@ -154,7 +194,7 @@ export default function HomeScreen() {
     return (
       <Screen>
         <View style={styles.loading}>
-          <ActivityIndicator size="large" color={colors.accent} />
+          <ActivityIndicator size="large" color={theme.colors.text} />
         </View>
       </Screen>
     );
@@ -166,7 +206,9 @@ export default function HomeScreen() {
   const totalHours = Math.floor(cleanMs / 3_600_000);
   const minutes = Math.floor(cleanMs / 60_000) % 60;
   const seconds = Math.floor(cleanMs / 1000) % 60;
-  const counterLine = `${totalHours.toLocaleString('en-US')} h ${String(minutes).padStart(2, '0')} m ${String(seconds).padStart(2, '0')} s`;
+  const counterLine = `${totalHours.toLocaleString('en-US')} h ${String(
+    minutes
+  ).padStart(2, '0')} m ${String(seconds).padStart(2, '0')} s`;
 
   const pledged = hasPledgedToday(state.pledge, nowMs);
   const pledgeStreak = state.pledge.pledgeStreak;
@@ -186,41 +228,61 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.orbHero}>
-          <Orb
-            cleanDays={cleanMs / MS_PER_DAY}
-            theme={state.settings.orbTheme}
-            size={orbSize}
-            onPress={() => setSheetVisible(true)}
-          />
-        </View>
+        <OrbHero
+          theme={state.settings.orbTheme}
+          cleanMs={cleanMs}
+          size={orbSize}
+          onPress={() => setSheetVisible(true)}
+        />
 
         <View style={styles.counter}>
-          <Text style={styles.streakEyebrow}>CURRENT STREAK</Text>
-          <Text style={styles.dayNumber}>
+          <Text style={[styles.streakEyebrow, { color: theme.colors.metadata }]}>
+            CURRENT STREAK
+          </Text>
+          <Text
+            style={[
+              styles.dayNumber,
+              { color: theme.colors.text, fontVariant: ['tabular-nums'] },
+            ]}
+          >
             {cleanDays.toLocaleString('en-US')}
           </Text>
-          <Text style={styles.dayCaption}>
+          <Text style={[styles.dayCaption, { color: theme.colors.metadata }]}>
             day{cleanDays === 1 ? '' : 's'} clean
           </Text>
-          <Text style={styles.counterLine}>{counterLine}</Text>
+          <Text
+            style={[
+              styles.counterLine,
+              { color: theme.colors.metadata, fontVariant: ['tabular-nums'] },
+            ]}
+          >
+            {counterLine}
+          </Text>
         </View>
 
         <View style={styles.pledgeWrap}>
           <GlassButton
             title={
               pledged
-                ? `Pledged ✓${pledgeStreak > 0 ? ` · ${pledgeStreak}-day streak` : ''}`
+                ? `Pledged ✓${
+                    pledgeStreak > 0 ? ` · ${pledgeStreak}-day streak` : ''
+                  }`
                 : 'Pledge today'
             }
             onPress={handlePledge}
+            variant="primary"
             disabled={pledged}
           />
         </View>
 
         {reasons.length > 0 && (
-          <Animated.Text style={[styles.reason, { opacity: reasonFade }]}>
-            {reasons[reasonIdx % reasons.length]}
+          <Animated.Text
+            style={[
+              styles.reason,
+              { color: theme.colors.text, opacity: reasonFade },
+            ]}
+          >
+            “{reasons[reasonIdx % reasons.length]}”
           </Animated.Text>
         )}
 
@@ -228,19 +290,22 @@ export default function HomeScreen() {
           <Pressable
             accessibilityRole="link"
             onPress={() => router.push('/urge-surf')}
-            style={styles.cravingLink}
+            style={styles.linkHit}
           >
-            <Text style={styles.cravingText}>Craving right now?</Text>
+            <Text style={[styles.cravingText, { color: theme.colors.accent }]}>
+              Craving right now?
+            </Text>
           </Pressable>
           <Pressable
             accessibilityRole="link"
             onPress={() => router.push('/relapse')}
-            style={styles.slipLink}
+            style={styles.linkHit}
           >
-            <Text style={styles.slipText}>I slipped</Text>
+            <Text style={[styles.slipText, { color: theme.colors.metadata }]}>
+              I slipped
+            </Text>
           </Pressable>
         </View>
-
       </ScrollView>
 
       <ExactTimeSheet
@@ -280,9 +345,13 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { flexGrow: 1, paddingHorizontal: spacing.lg, paddingBottom: spacing.xl },
+  content: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+  },
   orbHero: {
-    minHeight: '42%',
+    minHeight: '38%',
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: spacing.md,
@@ -290,49 +359,40 @@ const styles = StyleSheet.create({
   counter: { alignItems: 'center', marginTop: spacing.sm },
   streakEyebrow: {
     ...type.caption,
-    color: colors.textTertiary,
-    letterSpacing: 3,
+    letterSpacing: 2,
   },
   dayNumber: {
-    fontSize: 72,
+    fontSize: 76,
     fontWeight: '800',
-    color: colors.text,
     letterSpacing: -2,
-    lineHeight: 80,
+    lineHeight: 84,
     marginTop: spacing.xs,
   },
-  dayCaption: { ...type.callout, color: colors.textSecondary, marginTop: 2 },
+  dayCaption: { ...type.callout, marginTop: 2 },
   counterLine: {
     ...type.caption,
-    color: colors.textTertiary,
     marginTop: spacing.xs,
-    fontVariant: ['tabular-nums'],
   },
   pledgeWrap: { marginTop: spacing.lg },
   reason: {
     ...type.body,
-    color: colors.textSecondary,
-    textAlign: 'center',
     fontStyle: 'italic',
+    textAlign: 'center',
     marginTop: spacing.lg,
-    minHeight: 48,
+    minHeight: 52,
     paddingHorizontal: spacing.md,
   },
-  links: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.md },
-  cravingLink: { paddingVertical: spacing.sm },
-  cravingText: { ...type.body, color: colors.accent, fontWeight: '600' },
-  slipLink: { paddingVertical: spacing.sm },
-  slipText: { ...type.callout, color: colors.textTertiary },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    alignItems: 'center',
+  links: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.sm },
+  linkHit: {
+    minHeight: 44,
     justifyContent: 'center',
-    padding: spacing.lg,
+    paddingHorizontal: spacing.md,
   },
-  sheetCard: { width: '100%', padding: spacing.xl, alignItems: 'center' },
-  sheetEyebrow: { ...type.caption, color: colors.textTertiary, marginBottom: spacing.sm },
-  sheetTime: { ...type.title, color: colors.text, textAlign: 'center' },
-  sheetSub: { ...type.callout, color: colors.textSecondary, marginTop: spacing.sm },
+  cravingText: { ...type.body, fontWeight: '600' },
+  slipText: { ...type.callout },
+  sheetInner: { alignItems: 'center', paddingTop: spacing.sm },
+  sheetEyebrow: { ...type.caption, letterSpacing: 2, marginBottom: spacing.sm },
+  sheetTime: { ...type.title1, textAlign: 'center' },
+  sheetSub: { ...type.callout, marginTop: spacing.sm },
   sheetBtn: { marginTop: spacing.lg, alignSelf: 'stretch' },
 });

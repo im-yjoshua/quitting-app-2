@@ -1,59 +1,43 @@
 /**
- * Orb — the living streak visualization (spec §3).
+ * Orb — the living streak visualization.
  *
- * ONE component used on Home (large), Urge Surf (breathing), celebration
- * (burst — Day 4), and share cards (static render via `animated={false}`).
+ * The product's single intentional color object on a monochrome canvas
+ * (the stated deviation from the monochrome law). Rendered with the
+ * 5-layer glass recipe:
  *
- * - Base: layered radial-feel gradients inside a glass sphere
- *   (GlassView on iOS 26+, gradient + blur fallback below — never empty).
- * - Radiance is a CONTINUOUS function of cleanDays: dim at day 0, luminous
- *   at 90d+. No hard steps — it's always growing.
- * - Idle: slow breathe (scale 1.0↔1.04, 6s loop) on the UI thread via Reanimated.
- * - Tap: gentle expand + haptic; the parent opens the exact-time sheet.
- * - Themes: dawn (free), ember/tide (premium — wired, gated on Day 5).
+ * - Layered gradients for spherical depth (base diagonal + top-left
+ *   transparent → bottom-right shade for volume).
+ * - Crisp specular highlight, top-left (non-negotiable) with soft-fading
+ *   edges; rim light along the bottom-right edge.
+ * - Top inset highlight + bottom inset shade — the two insets that keep
+ *   glass from reading as milk, adapted to React Native.
+ * - Inner glow whose intensity follows the continuous radiance curve:
+ *   dim + desaturated at day 0, luminous by 90d+. No hard steps.
  *
- * Burst/relapse-dim/milestone animations land with Day 3–4.
+ * Idle: slow calm breathe on a Reanimated spring (the product, not
+ * decoration). Tap: spring press to 0.97 + haptic; the parent opens the
+ * exact-time sheet. Shimmer sweep gates in for luminous streaks (60d+).
+ * `animated={false}` renders fully static (share cards, urge-surf breath).
+ *
+ * Themes: dawn (free), ember / tide (premium) — same names as before.
  */
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
-  Easing,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
   withSpring,
   withTiming,
+  Easing,
 } from 'react-native-reanimated';
 
 import type { OrbTheme } from '../types/app';
 import { GlassSurface } from './glass/GlassSurface';
-
-const THEME_STOPS: Record<
-  OrbTheme,
-  { inner: string; mid: string; outer: string; glow: string }
-> = {
-  dawn: {
-    inner: '#C9B8FF',
-    mid: '#7C6CF0',
-    outer: '#2E2A66',
-    glow: '#7C6CF0',
-  },
-  ember: {
-    inner: '#FFD9A8',
-    mid: '#E8786A',
-    outer: '#5E2A2A',
-    glow: '#E8786A',
-  },
-  tide: {
-    inner: '#B8F4E4',
-    mid: '#35B3A3',
-    outer: '#1B4A4A',
-    glow: '#35B3A3',
-  },
-};
+import { motion, orbThemes } from '../theme/tokens';
 
 interface OrbProps {
   /** Days clean — drives radiance continuously. */
@@ -61,7 +45,7 @@ interface OrbProps {
   theme?: OrbTheme;
   /** Diameter of the sphere in points. */
   size?: number;
-  /** false = static render for share cards (no Reanimated loops). */
+  /** false = static render (no Reanimated loops). */
   animated?: boolean;
   onPress?: () => void;
 }
@@ -104,8 +88,8 @@ function mixHex(hex: string, other: string, amount: number): string {
 
 /**
  * Luminance-matched grayscale of a color — used to desaturate the orb at
- * low radiance so day 0 reads dim AND gray (spec §3), while keeping the
- * gradient's 3D depth.
+ * low radiance so day 0 reads dim AND gray, while keeping the gradient's
+ * 3D depth.
  */
 function toGray(hex: string): string {
   const [r, g, b] = hexToRgb(hex);
@@ -136,7 +120,7 @@ export function Orb({
   animated = true,
   onPress,
 }: OrbProps) {
-  const stops = THEME_STOPS[theme];
+  const stops = orbThemes[theme];
   const t = orbRadiance(cleanDays);
 
   // Day 0 renders a dim gray sphere; color blooms in as the streak grows.
@@ -150,10 +134,11 @@ export function Orb({
   const press = useSharedValue(1);
   const shimmerX = useSharedValue(-1);
 
+  // Calm breathe on a slow spring — interruptible, reversible, UI thread.
   useEffect(() => {
     if (!animated) return;
     breathe.value = withRepeat(
-      withTiming(1.04, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
+      withSpring(1.045, { damping: 22, stiffness: 45 }),
       -1,
       true
     );
@@ -184,10 +169,10 @@ export function Orb({
   }));
 
   const handlePressIn = () => {
-    press.value = withSpring(1.06, { damping: 12, stiffness: 200 });
+    press.value = withSpring(motion.pressScale, motion.press);
   };
   const handlePressOut = () => {
-    press.value = withSpring(1, { damping: 12, stiffness: 200 });
+    press.value = withSpring(1, motion.press);
   };
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -235,43 +220,111 @@ export function Orb({
           <GlassSurface
             style={sphereStyle}
             glassEffectStyle="clear"
-            fallbackIntensity={55}
+            interactive
+            fallbackIntensity={70}
           >
             <View style={StyleSheet.absoluteFill}>
+              {/* Base diagonal gradient — theme color story */}
               <LinearGradient
                 colors={[inner, mid, outer]}
-                start={{ x: 0.25, y: 0.15 }}
+                start={{ x: 0.25, y: 0.12 }}
                 end={{ x: 0.8, y: 0.95 }}
                 style={StyleSheet.absoluteFill}
               />
-              {/* Inner light — brightens as the streak grows */}
+              {/* Spherical depth — shade gathering toward bottom-right */}
+              <LinearGradient
+                colors={['rgba(255,255,255,0.14)', 'rgba(0,0,0,0)']}
+                start={{ x: 0.2, y: 0.1 }}
+                end={{ x: 0.55, y: 0.45 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <LinearGradient
+                colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.38)']}
+                start={{ x: 0.45, y: 0.45 }}
+                end={{ x: 0.95, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              {/* Inner glow — brightens as the streak grows */}
               <View
                 style={[
-                  styles.innerLight,
+                  styles.innerGlow,
                   {
-                    width: size * 0.52,
-                    height: size * 0.52,
-                    borderRadius: size * 0.26,
+                    width: size * 0.56,
+                    height: size * 0.56,
+                    borderRadius: size * 0.28,
                     backgroundColor: inner,
-                    opacity: 0.25 + 0.45 * t,
+                    opacity: 0.2 + 0.5 * t,
                   },
                 ]}
               />
-              {/* Glass highlight — the "liquid" sheen */}
+              {/* Rim light — bottom-right edge arc */}
               <View
                 style={[
-                  styles.highlight,
+                  styles.rim,
                   {
-                    width: size * 0.34,
+                    width: size * 0.92,
+                    height: size * 0.92,
+                    borderRadius: size * 0.46,
+                    right: size * 0.02,
+                    bottom: size * 0.02,
+                    opacity: 0.1 + 0.3 * t,
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.9)']}
+                  start={{ x: 0.15, y: 0.15 }}
+                  end={{ x: 0.95, y: 0.95 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+              {/* Specular highlight — top-left, crisp but soft-edged */}
+              <View
+                style={[
+                  styles.specular,
+                  {
+                    width: size * 0.36,
                     height: size * 0.22,
-                    borderRadius: size * 0.17,
+                    borderRadius: size * 0.11,
                     top: size * 0.1,
-                    left: size * 0.16,
-                    opacity: 0.35,
+                    left: size * 0.15,
+                    opacity: 0.55 + 0.3 * t,
+                    transform: [{ rotate: '-24deg' }],
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={['rgba(255,255,255,0.95)', 'rgba(255,255,255,0)']}
+                  start={{ x: 0.3, y: 0.2 }}
+                  end={{ x: 0.8, y: 0.9 }}
+                  style={StyleSheet.absoluteFill}
+                />
+              </View>
+              {/* Inset highlights — the 5-layer recipe's non-negotiables,
+                  adapted to RN: thin bright line at the top rim, soft dark
+                  line at the bottom rim. Clipped to the sphere by the glass
+                  surface's overflow hidden. */}
+              <View
+                style={[
+                  styles.insetTop,
+                  {
+                    top: size * 0.045,
+                    width: size * 0.62,
+                    opacity: 0.35 + 0.25 * t,
                   },
                 ]}
               />
-              {/* Shimmer sweep — luminous streaks only, clipped to the sphere */}
+              <View
+                style={[
+                  styles.insetBottom,
+                  {
+                    bottom: size * 0.045,
+                    width: size * 0.62,
+                    opacity: 0.3,
+                  },
+                ]}
+              />
+              {/* Shimmer sweep — luminous streaks only, clipped to sphere */}
               {shimmerActive && (
                 <Animated.View
                   style={[
@@ -306,19 +359,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  innerLight: {
+  innerGlow: {
     position: 'absolute',
     alignSelf: 'center',
-    top: '24%',
+    top: '22%',
   },
-  highlight: {
+  rim: {
     position: 'absolute',
-    backgroundColor: '#FFFFFF',
-    transform: [{ rotate: '-24deg' }],
+    overflow: 'hidden',
+  },
+  specular: {
+    position: 'absolute',
+    overflow: 'hidden',
+  },
+  insetTop: {
+    position: 'absolute',
+    alignSelf: 'center',
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+  },
+  insetBottom: {
+    position: 'absolute',
+    alignSelf: 'center',
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   shimmerBand: {
     position: 'absolute',
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.9)',
   },
 });

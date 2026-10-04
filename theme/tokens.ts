@@ -64,6 +64,34 @@ const orb = {
   sovereign: '#5BC8E8', // long streak — icy bright
 } as const;
 
+/**
+ * Orb theme gradient stops — the product's single intentional color object
+ * (the stated monochrome deviation). Same three themes as before (dawn
+ * free; ember + tide premium), elevated by the 5-layer rendering in
+ * components/Orb.tsx. Exported for components/Orb.tsx (kept out of
+ * ThemeColors so the monochrome theme objects stay pure).
+ */
+export const orbThemes = {
+  dawn: {
+    inner: '#C9B8FF',
+    mid: '#7C6CF0',
+    outer: '#2E2A66',
+    glow: '#7C6CF0',
+  },
+  ember: {
+    inner: '#FFD9A8',
+    mid: '#E8786A',
+    outer: '#5E2A2A',
+    glow: '#E8786A',
+  },
+  tide: {
+    inner: '#B8F4E4',
+    mid: '#35B3A3',
+    outer: '#1B4A4A',
+    glow: '#35B3A3',
+  },
+} as const;
+
 const shared = {
   accent: '#7C6CF0', // sovereign violet
   accentSoft: 'rgba(124, 108, 240, 0.16)',
