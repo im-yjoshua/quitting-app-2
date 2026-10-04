@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
     marginBottom: spacing.sm,
   },
-  moneyLabel: { ...type.micro, color: colors.textTertiary, letterSpacing: 2 },
+  moneyLabel: { ...type.caption, color: colors.textTertiary, letterSpacing: 2 },
   moneyValue: {
     fontSize: 34,
     fontWeight: '800',
@@ -413,7 +413,7 @@ const styles = StyleSheet.create({
   tlLabel: { ...type.callout, color: colors.text },
   tlDetail: { ...type.caption, color: colors.textSecondary },
   nextTag: {
-    ...type.micro,
+    ...type.caption,
     color: colors.accent,
     borderWidth: 1,
     borderColor: colors.accent,

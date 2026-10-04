@@ -210,6 +210,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
   },
-  longestLabel: { ...type.micro, color: colors.textTertiary },
+  longestLabel: { ...type.caption, color: colors.textTertiary },
   longestValue: { ...type.headline, color: colors.text, marginTop: spacing.xs },
 });

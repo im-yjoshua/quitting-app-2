@@ -56,12 +56,19 @@ import { cleanDaysFloor } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
 import { usePremium } from '../../../hooks/usePremium';
 import { colors, radii, spacing, type } from '../../../theme/tokens';
-import type { OrbTheme } from '../../../types/app';
+import type { AppearanceSetting, OrbTheme } from '../../../types/app';
 
 const ORB_THEMES: { id: OrbTheme; label: string; locked: boolean; swatch: string }[] = [
   { id: 'dawn', label: 'Dawn', locked: false, swatch: '#7C6CF0' },
   { id: 'ember', label: 'Ember', locked: true, swatch: '#E8786A' },
   { id: 'tide', label: 'Tide', locked: true, swatch: '#35B3A3' },
+];
+
+/** Appearance switcher (redesign phase 1 placeholder — full You reskin later). */
+const APPEARANCES: { id: AppearanceSetting; label: string }[] = [
+  { id: 'light', label: 'Light' },
+  { id: 'dark', label: 'Dark' },
+  { id: 'system', label: 'System' },
 ];
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
@@ -359,6 +366,37 @@ export default function YouScreen() {
           />
         </GlassCard>
 
+        {/* Appearance — Light / Dark / System */}
+        <SectionTitle>Appearance</SectionTitle>
+        <GlassCard style={styles.card}>
+          {APPEARANCES.map((a) => {
+            const selected = settings.appearance === a.id;
+            return (
+              <Pressable
+                key={a.id}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: selected }}
+                accessibilityLabel={`${a.label} appearance`}
+                onPress={() => {
+                  void Haptics.impactAsync(
+                    Haptics.ImpactFeedbackStyle.Light
+                  );
+                  void updateSettings({ appearance: a.id });
+                }}
+                style={({ pressed }) => [
+                  styles.appearanceRow,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.rowLabel}>{a.label}</Text>
+                {selected ? (
+                  <Text style={styles.check}>✓</Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
+        </GlassCard>
+
         {/* Orb theme — Ember & Tide are Sovereign-member only */}
         <SectionTitle>Orb theme</SectionTitle>
         <GlassCard style={styles.card}>
@@ -589,6 +627,15 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   themeLabel: { ...type.callout, color: colors.text },
+  appearanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+  },
+  pressed: { opacity: 0.7 },
+  check: { ...type.headline, color: colors.accent },
   btnRow: { gap: spacing.sm, marginTop: spacing.sm },
   divider: { height: 1, backgroundColor: colors.hairline },
   guideToggle: { paddingVertical: spacing.xs },

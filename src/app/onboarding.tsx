@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   },
   stepperGlyph: { ...type.title, color: colors.text },
   stepperValue: { alignItems: 'center', minWidth: 56 },
-  stepperLabel: { ...type.micro, color: colors.textTertiary },
+  stepperLabel: { ...type.caption, color: colors.textTertiary },
   stepperNumber: { ...type.title, color: colors.text },
   ampm: {
     paddingHorizontal: spacing.md,

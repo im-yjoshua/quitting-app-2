@@ -336,6 +336,8 @@ export interface JournalEntry {
 
 export type OrbTheme = 'dawn' | 'ember' | 'tide';
 export type ShareCardStyle = 'classic' | 'noir';
+/** Light / Dark / System appearance switcher (redesign phase 1). */
+export type AppearanceSetting = 'light' | 'dark' | 'system';
 
 export interface AppSettings {
   pledgeReminder: boolean;
@@ -344,6 +346,8 @@ export interface AppSettings {
   orbTheme: OrbTheme;
   /** premium unlocks noir */
   shareCardStyle: ShareCardStyle;
+  /** UI appearance — 'system' follows the device. */
+  appearance: AppearanceSetting;
 }
 
 export interface AppState {
@@ -484,6 +488,12 @@ export function isAppState(raw: unknown): raw is AppState {
       settings!.orbTheme === 'ember' ||
       settings!.orbTheme === 'tide') &&
     (settings!.shareCardStyle === 'classic' ||
-      settings!.shareCardStyle === 'noir')
+      settings!.shareCardStyle === 'noir') &&
+    // appearance is optional for forward-compat: pre-redesign persisted
+    // states lack it and are normalized to 'system' on load.
+    (settings!.appearance === undefined ||
+      settings!.appearance === 'light' ||
+      settings!.appearance === 'dark' ||
+      settings!.appearance === 'system')
   );
 }

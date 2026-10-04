@@ -9,7 +9,15 @@ import {
   syncCustomerEntitlements,
 } from '../../services/purchases';
 
+import { useScheme } from '../../theme/useTheme';
+
 void SplashScreen.preventAutoHideAsync();
+
+/** StatusBar follows the resolved appearance (inside the provider). */
+function ThemedStatusBar() {
+  const scheme = useScheme();
+  return <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />;
+}
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
@@ -38,7 +46,7 @@ export default function RootLayout() {
 
   return (
     <AppStateProvider>
-      <StatusBar style="light" />
+      <ThemedStatusBar />
       <Slot />
     </AppStateProvider>
   );

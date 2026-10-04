@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   kicker: {
-    ...type.micro,
+    ...type.caption,
     color: colors.accent,
     letterSpacing: 4,
     marginBottom: spacing.sm,

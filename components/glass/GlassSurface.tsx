@@ -2,13 +2,16 @@
  * GlassSurface — the single shared wrapper for every glass element.
  *
  * - iOS 26+: native Liquid Glass via `GlassView` (expo-glass-effect).
- * - Anything else (older iOS, Android): `expo-blur` BlurView fallback so
- *   free-floating elements (tab bar, pills, overlays) never visually disappear.
+ * - Anything else (older iOS, Android): 5-layer fallback —
+ *     1. translucent fill
+ *     2. BlurView (24px-class blur) + saturation-boosting tint
+ *     3. MANDATORY inset top highlight: 1px line, rgba(255,255,255,.5)
+ *     4. bottom inset shade: 1px line, rgba(255,255,255,.18)
+ *     5. soft drop shadow
+ *   Without the insets, glass reads as milk — they are what sell the edge.
  *
- * Never hand-roll glass with opacity overlays — per the v57 docs, GlassView
- * renders as a plain transparent View on unsupported platforms, which is why
- * the BlurView fallback exists. Never set opacity 0 on GlassView or parents
- * (kills the effect); use `glassEffectStyle="none"` to hide instead.
+ * Glass is reserved for: the native tab bar, sheets, the Orb, and floating
+ * overlays. NEVER behind body text. Never stacked more than 2 deep.
  */
 import { BlurView } from 'expo-blur';
 import {
@@ -17,7 +20,9 @@ import {
   isLiquidGlassAvailable,
 } from 'expo-glass-effect';
 import React from 'react';
-import { Platform, StyleProp, ViewStyle } from 'react-native';
+import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+
+import { useTheme } from '../../theme/useTheme';
 
 export type GlassStyle = 'regular' | 'clear';
 
@@ -39,6 +44,49 @@ function canUseNativeGlass(): boolean {
     Platform.OS === 'ios' &&
     isLiquidGlassAvailable() &&
     isGlassEffectAPIAvailable()
+  );
+}
+
+/**
+ * The fallback stack. BlurView blurs what's behind it; the highlight/shade
+ * lines sit on top as absolute 1px edges, and content renders above all.
+ */
+function GlassFallback({
+  children,
+  style,
+  fallbackIntensity = 70,
+}: Pick<GlassSurfaceProps, 'children' | 'style' | 'fallbackIntensity'>) {
+  const theme = useTheme();
+  const dark = theme.scheme === 'dark';
+
+  return (
+    <View
+      style={[
+        styles.fallbackHost,
+        { shadowColor: theme.colors.shadow },
+        styles.fallbackShadow,
+        style,
+      ]}
+    >
+      <BlurView
+        style={StyleSheet.absoluteFill}
+        tint={dark ? 'dark' : 'light'}
+        intensity={fallbackIntensity}
+      />
+      {/* Layer 1 — translucent fill (saturation-boost stand-in). */}
+      <View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { backgroundColor: dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.28)' },
+        ]}
+      />
+      {/* Layer 3 — mandatory inset top highlight. */}
+      <View pointerEvents="none" style={styles.topHighlight} />
+      {/* Layer 4 — bottom inset shade. */}
+      <View pointerEvents="none" style={styles.bottomShade} />
+      <View style={styles.fallbackContent}>{children}</View>
+    </View>
   );
 }
 
@@ -67,13 +115,9 @@ export function GlassSurface({
   }
 
   return (
-    <BlurView
-      style={[clippedStyle, style]}
-      tint="dark"
-      intensity={fallbackIntensity}
-    >
+    <GlassFallback style={style} fallbackIntensity={fallbackIntensity}>
       {children}
-    </BlurView>
+    </GlassFallback>
   );
 }
 
@@ -81,3 +125,37 @@ export function GlassSurface({
 export function isNativeGlassActive(): boolean {
   return canUseNativeGlass();
 }
+
+const styles = StyleSheet.create({
+  fallbackHost: {
+    overflow: 'hidden',
+  },
+  // Layer 5 — soft drop shadow (color from tokens; geometry here).
+  fallbackShadow: {
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
+  },
+  fallbackContent: {
+    flex: 1,
+  },
+  topHighlight: {
+    position: 'absolute',
+    top: 0,
+    left: 6,
+    right: 6,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+  },
+  bottomShade: {
+    position: 'absolute',
+    bottom: 0,
+    left: 6,
+    right: 6,
+    height: 1,
+    borderRadius: 1,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+});

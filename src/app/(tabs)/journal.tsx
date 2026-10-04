@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   section: { gap: spacing.sm },
-  dayHeader: { ...type.micro, color: colors.textTertiary, marginTop: spacing.sm },
+  dayHeader: { ...type.caption, color: colors.textTertiary, marginTop: spacing.sm },
   entry: {
     backgroundColor: colors.backgroundElevated,
     borderRadius: radii.md,

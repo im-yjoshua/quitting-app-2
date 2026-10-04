@@ -1,22 +1,15 @@
 /**
- * GlassToggle — a glass settings toggle.
+ * GlassToggle — a settings row with the NATIVE Switch.
  *
- * Frosted pill track; the knob slides between off/on positions on a
- * Reanimated shared value with `withSpring` — the whole animation runs on
- * the UI thread with no per-frame JS. The shared value is seeded from the
- * initial `value` prop so the knob never jumps on mount.
+ * System components over custom ones: the hand-rolled glass knob is gone.
+ * Native Switch, accent on-state, light haptic on change. 44pt row target.
  */
 import * as Haptics from 'expo-haptics';
-import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import React from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 
-import { colors, radii, spacing, type } from '../../theme/tokens';
-import { GlassSurface } from './GlassSurface';
+import { spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/useTheme';
 
 interface GlassToggleProps {
   label: string;
@@ -26,58 +19,52 @@ interface GlassToggleProps {
   hint?: string;
 }
 
-const TRACK_W = 52;
-const TRACK_PAD = 3;
-const KNOB = 26;
-/** Knob travel: inner width minus knob diameter. */
-const ON_X = TRACK_W - KNOB - TRACK_PAD * 2;
+export function GlassToggle({
+  label,
+  value,
+  onValueChange,
+  hint,
+}: GlassToggleProps) {
+  const theme = useTheme();
 
-export function GlassToggle({ label, value, onValueChange, hint }: GlassToggleProps) {
   const handlePress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onValueChange(!value);
   };
-
-  // Seeded from the prop — no layout jump on mount. Later changes spring.
-  const knobX = useSharedValue(value ? ON_X : 0);
-  useEffect(() => {
-    knobX.value = withSpring(value ? ON_X : 0, {
-      damping: 20,
-      stiffness: 320,
-      mass: 0.8,
-    });
-  }, [value, knobX]);
-
-  const knobAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: knobX.value }],
-  }));
 
   return (
     <Pressable
       accessibilityRole="switch"
       accessibilityState={{ checked: value }}
       onPress={handlePress}
-      style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.row,
+        pressed && styles.pressed,
+      ]}
     >
       <View style={styles.textWrap}>
-        <Text style={styles.label}>{label}</Text>
-        {hint ? <Text style={styles.hint}>{hint}</Text> : null}
+        <Text style={[styles.label, { color: theme.colors.text }]}>
+          {label}
+        </Text>
+        {hint ? (
+          <Text style={[styles.hint, { color: theme.colors.metadata }]}>
+            {hint}
+          </Text>
+        ) : null}
       </View>
-      <GlassSurface
-        style={[styles.track, value && styles.trackOn]}
-        glassEffectStyle="clear"
-        fallbackIntensity={70}
-      >
-        <View style={styles.trackInner}>
-          <Animated.View
-            style={[
-              styles.knob,
-              value ? styles.knobOn : styles.knobOff,
-              knobAnimatedStyle,
-            ]}
-          />
-        </View>
-      </GlassSurface>
+      <Switch
+        value={value}
+        onValueChange={(next) => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onValueChange(next);
+        }}
+        trackColor={{
+          false: theme.colors.surface,
+          true: theme.colors.accent,
+        }}
+        thumbColor={theme.colors.onAccent}
+        ios_backgroundColor={theme.colors.surface}
+      />
     </Pressable>
   );
 }
@@ -88,6 +75,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: spacing.sm,
+    minHeight: 44,
   },
   pressed: {
     opacity: 0.8,
@@ -98,36 +86,9 @@ const styles = StyleSheet.create({
   },
   label: {
     ...type.body,
-    color: colors.text,
   },
   hint: {
-    ...type.callout,
-    color: colors.textTertiary,
+    ...type.subhead,
     marginTop: 2,
-  },
-  track: {
-    width: TRACK_W,
-    height: KNOB + 6,
-    borderRadius: radii.pill,
-  },
-  trackOn: {
-    backgroundColor: colors.accentSoft,
-  },
-  trackInner: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: TRACK_PAD,
-  },
-  knob: {
-    width: KNOB,
-    height: KNOB,
-    borderRadius: KNOB / 2,
-  },
-  knobOff: {
-    backgroundColor: colors.text,
-  },
-  knobOn: {
-    backgroundColor: colors.accent,
   },
 });

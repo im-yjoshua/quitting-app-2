@@ -107,6 +107,7 @@ describe('createAppStateFromQuit', () => {
       milestoneAlerts: true,
       orbTheme: 'dawn',
       shareCardStyle: 'classic',
+      appearance: 'system',
     });
   });
 });

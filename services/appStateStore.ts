@@ -27,6 +27,7 @@ export function defaultAppState(): AppState {
       milestoneAlerts: true,
       orbTheme: 'dawn',
       shareCardStyle: 'classic',
+      appearance: 'system',
     },
   };
 }
@@ -39,7 +40,15 @@ export function defaultAppState(): AppState {
 export async function loadAppState(): Promise<AppState> {
   const result = await loadEnvelopedObject(V2_APP_STATE_KEY, isAppState);
   if (result.status === 'ok' && result.object !== null) {
-    return result.object;
+    // Forward-compat: pre-redesign states have no appearance setting.
+    const state = result.object;
+    if (state.settings.appearance === undefined) {
+      return {
+        ...state,
+        settings: { ...state.settings, appearance: 'system' as const },
+      };
+    }
+    return state;
   }
   return defaultAppState();
 }

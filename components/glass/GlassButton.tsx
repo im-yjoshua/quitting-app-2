@@ -1,8 +1,10 @@
 /**
- * GlassButton — primary call-to-action rendered as interactive glass.
+ * GlassButton — the app's call-to-action.
  *
- * Uses `isInteractive` GlassView on iOS 26+ for the native pressable-glass
- * feel; BlurView + Pressable elsewhere. Haptic tick on press.
+ * Monochrome law: full-width primaries are INVERTED fills (white fill/black
+ * text on dark, black fill/white text on light) — never violet, never glass.
+ * Secondary actions get a subtle glass surface. Press = 0.97 spring scale +
+ * haptic at animation start. 44pt+ target, 4/8 grid, standard radius.
  */
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
@@ -15,7 +17,8 @@ import {
   ViewStyle,
 } from 'react-native';
 
-import { colors, radii, spacing, type } from '../../theme/tokens';
+import { motion, radii, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/useTheme';
 import { GlassSurface } from './GlassSurface';
 
 interface GlassButtonProps {
@@ -23,7 +26,12 @@ interface GlassButtonProps {
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
   disabled?: boolean;
-  /** Accent-tinted glass for the primary action, neutral for secondary. */
+  /** primary = inverted fill · secondary = subtle glass. */
+  variant?: 'primary' | 'secondary';
+  /**
+   * @deprecated use `variant` instead. tone="neutral" maps to
+   * secondary, tone="accent" maps to primary.
+   */
   tone?: 'accent' | 'neutral';
 }
 
@@ -32,12 +40,16 @@ export function GlassButton({
   onPress,
   style,
   disabled = false,
-  tone = 'accent',
+  variant,
+  tone,
 }: GlassButtonProps) {
-  // Tasteful press micro-interaction: a quick spring scale on top of the
-  // existing haptic + opacity feedback. Skipped when disabled. Uses the
-  // built-in Animated API (method calls only — the shared-value assignment
-  // form trips the react-hooks/immutability lint rule).
+  const theme = useTheme();
+  const resolved: 'primary' | 'secondary' =
+    variant ?? (tone === 'neutral' ? 'secondary' : 'primary');
+
+  // Press micro-interaction: quick spring scale + haptic at animation start.
+  // Uses the built-in Animated API (the shared-value assignment form trips
+  // the react-hooks/immutability lint rule).
   const [scaleAnim] = useState(() => new Animated.Value(1));
 
   const handlePress = () => {
@@ -46,63 +58,92 @@ export function GlassButton({
     onPress();
   };
 
-  const springTo = (toValue: number) => {
-    Animated.spring(scaleAnim, {
-      toValue,
-      useNativeDriver: true,
-      stiffness: 380,
-      damping: 16,
-    }).start();
-  };
   const pressIn = () => {
-    if (!disabled) springTo(0.96);
+    if (!disabled) {
+      Animated.spring(scaleAnim, {
+        toValue: motion.pressScale,
+        useNativeDriver: true,
+        ...motion.press,
+      }).start();
+    }
   };
   const pressOut = () => {
-    springTo(1);
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      useNativeDriver: true,
+      ...motion.press,
+    }).start();
   };
 
+  const label = (
+    <Text
+      style={[
+        styles.title,
+        {
+          color:
+            resolved === 'primary' ? theme.colors.background : theme.colors.text,
+        },
+      ]}
+    >
+      {title}
+    </Text>
+  );
+
+  const pressable = (inner: React.ReactNode) => (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={handlePress}
+      onPressIn={pressIn}
+      onPressOut={pressOut}
+      style={({ pressed }) => [
+        styles.pressable,
+        resolved === 'primary' && {
+          backgroundColor: theme.colors.inverted,
+        },
+        pressed && styles.pressed,
+        disabled && styles.disabled,
+      ]}
+    >
+      {inner}
+    </Pressable>
+  );
+
+  // Inverted fill is the highest-contrast element on screen — exactly what a
+  // primary action should be. No violet, no glass.
+  if (resolved === 'primary') {
+    return (
+      <Animated.View style={[styles.host, { transform: [{ scale: scaleAnim }] }, style]}>
+        {pressable(label)}
+      </Animated.View>
+    );
+  }
+
+  // Secondary: subtle glass, full-brightness text.
   return (
-    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-      <GlassSurface
-        style={[styles.pill, tone === 'accent' && styles.pillAccent, style]}
-        glassEffectStyle="clear"
-        interactive
-        tintColor={tone === 'accent' ? colors.accent : undefined}
-        fallbackIntensity={80}
-      >
-        <Pressable
-          accessibilityRole="button"
-          disabled={disabled}
-          onPress={handlePress}
-          onPressIn={pressIn}
-          onPressOut={pressOut}
-          style={({ pressed }) => [
-            styles.pressable,
-            pressed && styles.pressed,
-            disabled && styles.disabled,
-          ]}
-        >
-          <Text style={styles.title}>{title}</Text>
-        </Pressable>
+    <Animated.View style={[styles.host, { transform: [{ scale: scaleAnim }] }, style]}>
+      <GlassSurface style={styles.secondary} fallbackIntensity={60}>
+        {pressable(label)}
       </GlassSurface>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  pill: {
-    borderRadius: radii.pill,
+  host: {
+    borderRadius: radii.md,
     overflow: 'hidden',
   },
-  pillAccent: {
-    // The tintColor on GlassView handles iOS 26+; the fallback gets a wash.
-    backgroundColor: colors.accentSoft,
-  },
   pressable: {
-    paddingHorizontal: spacing.xl,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: radii.md,
+  },
+  secondary: {
+    borderRadius: radii.md,
   },
   pressed: {
     opacity: 0.75,
@@ -111,8 +152,6 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   title: {
-    ...type.body,
-    fontWeight: '600',
-    color: colors.text,
+    ...type.headline,
   },
 });

@@ -1,39 +1,50 @@
 /**
- * GlassCard — frosted content card for stats and grouped content.
+ * GlassCard — grouped content card.
  *
- * Apple HIG note: glass is for nav/controls/overlays; content cards use it
- * here because the design language calls for floating stat cards (the
- * motion_conquest MEASURE scene). Text inside stays high-contrast — no
- * glass-on-glass.
+ * Monochrome law: content cards are NOT glass (glass is reserved for the tab
+ * bar, sheets, the Orb, and floating overlays). Cards get the ONE grey
+ * surface (#1C1C1E / #F2F2F7) — the iOS Settings grouped-list look — or the
+ * `outline` variant: pure canvas + hairline border for hero grids.
  */
 import React from 'react';
-import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 
 import { radii, spacing } from '../../theme/tokens';
-import { GlassStyle, GlassSurface } from './GlassSurface';
+import { useTheme } from '../../theme/useTheme';
 
 interface GlassCardProps {
   children: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  glassEffectStyle?: GlassStyle;
   /** Card inner padding. */
   padding?: number;
+  /** 'surface' (default) = the one grey · 'outline' = canvas + hairline. */
+  variant?: 'surface' | 'outline';
 }
 
 export function GlassCard({
   children,
   style,
-  glassEffectStyle = 'regular',
   padding = spacing.md,
+  variant = 'surface',
 }: GlassCardProps) {
+  const theme = useTheme();
   return (
-    <GlassSurface
-      style={[styles.card, { padding }, style]}
-      glassEffectStyle={glassEffectStyle}
-      fallbackIntensity={60}
+    <View
+      style={[
+        styles.card,
+        { padding },
+        variant === 'surface'
+          ? { backgroundColor: theme.colors.surface }
+          : {
+              backgroundColor: theme.colors.background,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: theme.colors.hairline,
+            },
+        style,
+      ]}
     >
       {children}
-    </GlassSurface>
+    </View>
   );
 }
 

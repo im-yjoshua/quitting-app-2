@@ -66,6 +66,7 @@ export function createAppStateFromQuit(quit: Quit): AppState {
       milestoneAlerts: true,
       orbTheme: 'dawn',
       shareCardStyle: 'classic',
+      appearance: 'system',
     },
   };
 }
