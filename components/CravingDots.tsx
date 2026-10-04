@@ -1,11 +1,15 @@
 /**
  * CravingDots — 1–5 craving intensity selector, shared by the journal
  * composer and the urge-surf end screen. Tapping the selected dot clears it.
+ *
+ * Monochrome: unselected dots are quiet (metadata numerals), the selected
+ * dot is an accent ring with full-brightness text. 44pt targets.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { colors, spacing, type } from '../theme/tokens';
+import { spacing, type } from '../theme/tokens';
+import { useTheme } from '../theme/useTheme';
 
 export type CravingValue = 1 | 2 | 3 | 4 | 5 | null;
 
@@ -16,6 +20,7 @@ export function CravingDots({
   value: CravingValue;
   onChange: (v: CravingValue) => void;
 }) {
+  const theme = useTheme();
   return (
     <View style={styles.row}>
       {([1, 2, 3, 4, 5] as const).map((n) => {
@@ -27,9 +32,30 @@ export function CravingDots({
             accessibilityState={{ selected: active }}
             accessibilityLabel={`Craving level ${n} of 5`}
             onPress={() => onChange(active ? null : n)}
-            style={[styles.dot, active && styles.dotActive]}
+            style={({ pressed }) => [
+              styles.dot,
+              {
+                borderColor: active
+                  ? theme.colors.accent
+                  : theme.colors.hairline,
+                backgroundColor: active
+                  ? theme.colors.accentSoft
+                  : 'transparent',
+              },
+              pressed && styles.pressed,
+            ]}
           >
-            <Text style={[styles.dotText, active && styles.dotTextActive]}>
+            <Text
+              style={[
+                styles.dotText,
+                {
+                  color: active
+                    ? theme.colors.text
+                    : theme.colors.metadata,
+                  fontWeight: active ? '700' : '400',
+                },
+              ]}
+            >
               {n}
             </Text>
           </Pressable>
@@ -47,14 +73,8 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.backgroundElement,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    borderWidth: 1.5,
   },
-  dotActive: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
-  dotText: { ...type.callout, color: colors.textSecondary },
-  dotTextActive: { color: colors.text, fontWeight: '700' },
+  pressed: { opacity: 0.7 },
+  dotText: { ...type.headline },
 });

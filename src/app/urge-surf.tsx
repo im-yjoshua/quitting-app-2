@@ -6,6 +6,9 @@
  * on the UI thread. "I’m okay now" early exit after 30s — no guilt copy.
  * Completion logs to urgeSurfs; the optional craving rating also lands in
  * the journal as a check-in.
+ *
+ * Monochrome reskin: the Orb carries the color; everything else is white
+ * type on black, minimal and calm.
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -27,7 +30,6 @@ import Animated, {
 import { CravingDots, type CravingValue } from '../../components/CravingDots';
 import { Orb } from '../../components/Orb';
 import { GlassButton } from '../../components/glass/GlassButton';
-import { GlassCard } from '../../components/glass/GlassCard';
 import { Screen } from '../../components/glass/Screen';
 import { daysCleanBefore } from '../../services/relapse';
 import {
@@ -38,7 +40,8 @@ import {
   breathPhaseLabel,
 } from '../../services/urgeSurf';
 import { useAppState } from '../../state/AppStateContext';
-import { colors, spacing, type } from '../../theme/tokens';
+import { radii, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/useTheme';
 
 const TICK_S = 0.25;
 
@@ -49,6 +52,7 @@ function formatCountdown(totalSeconds: number): string {
 }
 
 export default function UrgeSurfScreen() {
+  const theme = useTheme();
   const { state, logUrgeSurf, addJournal } = useAppState();
   const { width } = useWindowDimensions();
   const [elapsed, setElapsed] = useState(0);
@@ -114,18 +118,30 @@ export default function UrgeSurfScreen() {
     return (
       <Screen>
         <View style={styles.wrap}>
-          <Text style={styles.emoji}>🌊</Text>
-          <Text style={styles.title}>You rode it out</Text>
-          <Text style={styles.sub}>Urges peak and pass. This one did.</Text>
-          <GlassCard style={styles.card}>
-            <Text style={styles.cardLabel}>How strong was it? (optional)</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            You rode it out
+          </Text>
+          <Text style={[styles.sub, { color: theme.colors.text }]}>
+            Urges peak and pass. This one did.
+          </Text>
+          <View
+            style={[
+              styles.rateCard,
+              { backgroundColor: theme.colors.surface },
+            ]}
+          >
+            <Text style={[styles.rateLabel, { color: theme.colors.text }]}>
+              How strong was it? (optional)
+            </Text>
             <CravingDots value={craving} onChange={setCraving} />
-          </GlassCard>
-          <GlassButton
-            title={finishing ? 'Saving…' : 'Back home'}
-            onPress={handleFinish}
-            disabled={finishing}
-          />
+          </View>
+          <View style={styles.doneCta}>
+            <GlassButton
+              title={finishing ? 'Saving…' : 'Back home'}
+              onPress={handleFinish}
+              disabled={finishing}
+            />
+          </View>
         </View>
       </Screen>
     );
@@ -134,7 +150,10 @@ export default function UrgeSurfScreen() {
   return (
     <Screen>
       <View style={styles.wrap}>
-        <Text style={styles.phaseLabel} key={phase}>
+        <Text
+          style={[styles.phaseLabel, { color: theme.colors.text }]}
+          key={phase}
+        >
           {breathPhaseLabel(phase)}
         </Text>
         <Animated.View style={breathStyle}>
@@ -145,13 +164,28 @@ export default function UrgeSurfScreen() {
             animated={false}
           />
         </Animated.View>
-        <Text style={styles.copy}>
+        <Text style={[styles.copy, { color: theme.colors.text }]}>
           Urges peak and pass in ~20 minutes.{'\n'}Ride this one out.
         </Text>
-        <Text style={styles.timer}>{formatCountdown(remaining)}</Text>
-        <View style={styles.progressTrack}>
+        <Text
+          style={[styles.timer, { color: theme.colors.metadata }, styles.tabular]}
+        >
+          {formatCountdown(remaining)}
+        </Text>
+        <View
+          style={[
+            styles.progressTrack,
+            { backgroundColor: theme.colors.surface },
+          ]}
+        >
           <View
-            style={[styles.progressFill, { width: `${progress * 100}%` }]}
+            style={[
+              styles.progressFill,
+              {
+                width: `${progress * 100}%`,
+                backgroundColor: theme.colors.accent,
+              },
+            ]}
           />
         </View>
         {elapsed >= URGE_SURF_EARLY_EXIT_S ? (
@@ -160,7 +194,9 @@ export default function UrgeSurfScreen() {
             onPress={() => router.back()}
             style={styles.exitLink}
           >
-            <Text style={styles.exitText}>I’m okay now</Text>
+            <Text style={[styles.exitText, { color: theme.colors.accent }]}>
+              I’m okay now
+            </Text>
           </Pressable>
         ) : (
           <View style={styles.exitPlaceholder} />
@@ -178,28 +214,40 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.md,
   },
-  phaseLabel: { ...type.title, color: colors.text, textAlign: 'center' },
+  phaseLabel: { ...type.largeTitle, textAlign: 'center' },
   copy: {
     ...type.body,
-    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 24,
   },
-  timer: { ...type.callout, color: colors.textTertiary },
+  timer: { ...type.headline },
+  tabular: { fontVariant: ['tabular-nums'] },
   progressTrack: {
     width: '60%',
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.backgroundElement,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: colors.accent },
-  exitLink: { paddingVertical: spacing.md, marginTop: spacing.sm },
-  exitText: { ...type.callout, color: colors.textSecondary },
+  progressFill: { height: '100%', borderRadius: 2 },
+  exitLink: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  exitText: { ...type.headline },
   exitPlaceholder: { height: 52 },
-  emoji: { fontSize: 56 },
-  title: { ...type.title, color: colors.text, textAlign: 'center' },
-  sub: { ...type.body, color: colors.textSecondary, textAlign: 'center' },
-  card: { width: '100%', padding: spacing.lg, alignItems: 'center', gap: spacing.md },
-  cardLabel: { ...type.callout, color: colors.textSecondary },
+  title: { ...type.largeTitle, textAlign: 'center' },
+  sub: { ...type.body, textAlign: 'center' },
+  rateCard: {
+    width: '100%',
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  rateLabel: { ...type.headline },
+  doneCta: { width: '100%', marginTop: spacing.sm },
 });

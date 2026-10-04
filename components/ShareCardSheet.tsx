@@ -10,13 +10,16 @@
  * Go, so a static import would crash the whole app there. In Expo Go we
  * fall back to a text share; in dev/production builds the image path
  * works and is shared via expo-sharing.
+ *
+ * Monochrome reskin: the Sheet primitive, accent-selected style chips,
+ * inverted Share primary.
  */
 import * as Sharing from 'expo-sharing';
+import * as Haptics from 'expo-haptics';
 import React, { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   Share,
   StyleSheet,
@@ -26,9 +29,10 @@ import {
 
 import { ShareCard } from './ShareCard';
 import { GlassButton } from './glass/GlassButton';
-import { GlassSurface } from './glass/GlassSurface';
+import { Sheet } from './glass/Sheet';
 import type { QuitCategory, ShareCardStyle } from '../types/app';
-import { colors, radii, spacing, type } from '../theme/tokens';
+import { radii, spacing, type } from '../theme/tokens';
+import { useTheme } from '../theme/useTheme';
 
 interface ShareCardSheetProps {
   visible: boolean;
@@ -68,6 +72,8 @@ export function ShareCardSheet({
   onRequestPremium,
   onClose,
 }: ShareCardSheetProps) {
+  const theme = useTheme();
+  const c = theme.colors;
   const cardRef = useRef<View>(null);
   const [style, setStyle] = useState<ShareCardStyle>(initialStyle);
   const [sharing, setSharing] = useState(false);
@@ -77,6 +83,7 @@ export function ShareCardSheet({
       onRequestPremium();
       return;
     }
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setStyle(next);
   };
 
@@ -113,56 +120,48 @@ export function ShareCardSheet({
   };
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <View style={styles.backdrop}>
-        <GlassSurface
-          style={styles.sheet}
-          glassEffectStyle="clear"
-          fallbackIntensity={90}
-        >
-          <View style={styles.inner}>
-            <Text style={styles.title}>Share your streak</Text>
-            <ShareCard
-              ref={cardRef}
-              days={days}
-              category={category}
-              customName={customName}
-              style={style}
-            />
-            <View style={styles.styleRow}>
-              <StyleChip
-                label="Classic"
-                selected={style === 'classic'}
-                onPress={() => pickStyle('classic')}
-              />
-              <StyleChip
-                label={isPremium ? 'Noir' : 'Noir 🔒'}
-                selected={style === 'noir'}
-                onPress={() => pickStyle('noir')}
-              />
-            </View>
-            {sharing ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              <GlassButton title="Share" onPress={share} />
-            )}
-            <Pressable
-              accessibilityRole="button"
-              onPress={onClose}
-              style={styles.close}
-            >
-              <Text style={styles.closeText}>Close</Text>
-            </Pressable>
+    <Sheet visible={visible} onClose={onClose} dismissLabel="Close">
+      <View style={styles.inner}>
+        <Text style={[styles.title, { color: c.text }]}>
+          Share your streak
+        </Text>
+        <ShareCard
+          ref={cardRef}
+          days={days}
+          category={category}
+          customName={customName}
+          style={style}
+        />
+        <View style={styles.styleRow}>
+          <StyleChip
+            theme={theme}
+            label="Classic"
+            selected={style === 'classic'}
+            onPress={() => pickStyle('classic')}
+          />
+          <StyleChip
+            theme={theme}
+            label={isPremium ? 'Noir' : 'Noir 🔒'}
+            selected={style === 'noir'}
+            onPress={() => pickStyle('noir')}
+          />
+        </View>
+        {sharing ? (
+          <ActivityIndicator color={c.accent} />
+        ) : (
+          <View style={styles.shareWrap}>
+            <GlassButton title="Share" onPress={share} />
           </View>
-        </GlassSurface>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.close}
+        >
+          <Text style={[styles.closeText, { color: c.metadata }]}>Close</Text>
+        </Pressable>
       </View>
-    </Modal>
+    </Sheet>
   );
 }
 
@@ -170,18 +169,35 @@ function StyleChip({
   label,
   selected,
   onPress,
+  theme,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  theme: ReturnType<typeof useTheme>;
 }) {
+  const c = theme.colors;
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityRole="radio"
+      accessibilityState={{ checked: selected }}
       onPress={onPress}
-      style={[styles.chip, selected && styles.chipSelected]}
+      style={({ pressed }) => [
+        styles.chip,
+        {
+          borderColor: selected ? c.accent : c.hairline,
+          backgroundColor: selected ? c.accentSoft : 'transparent',
+        },
+        pressed && styles.pressed,
+      ]}
     >
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+      <Text
+        style={[
+          styles.chipText,
+          { color: selected ? c.text : c.metadata },
+          selected && styles.chipTextSelected,
+        ]}
+      >
         {label}
       </Text>
     </Pressable>
@@ -189,20 +205,6 @@ function StyleChip({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(4,6,16,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: radii.xl,
-    overflow: 'hidden',
-    maxHeight: '92%',
-  },
   inner: {
     alignItems: 'center',
     paddingVertical: spacing.lg,
@@ -210,36 +212,36 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   title: {
-    ...type.headline,
-    color: colors.text,
+    ...type.title2,
   },
   styleRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
   chip: {
+    minHeight: 44,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.pill,
-    borderWidth: 1,
-    borderColor: colors.hairlineStrong,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipSelected: {
-    backgroundColor: colors.accentSoft,
-    borderColor: colors.accent,
-  },
+  pressed: { opacity: 0.7 },
   chipText: {
-    ...type.callout,
-    color: colors.textSecondary,
+    ...type.headline,
   },
   chipTextSelected: {
-    color: colors.text,
+    fontWeight: '700',
   },
+  shareWrap: { alignSelf: 'stretch' },
   close: {
     paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   closeText: {
-    ...type.body,
-    color: colors.textSecondary,
+    ...type.headline,
   },
 });

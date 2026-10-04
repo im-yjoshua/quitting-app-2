@@ -4,21 +4,24 @@
  * - Check-in composer: craving 1–5 + note → JournalEntry (text is free
  *   and unlimited).
  * - Timeline: reverse-chron entries grouped by day ("Today"/"Yesterday"/
- *   short date). Long-press an entry to delete it.
+ *   short date) in iOS grouped-inset blocks. Long-press an entry to delete.
  * - Voice notes: the mic button is premium-gated — non-members route to the
  *   real paywall (/paywall); members get the real recording pipeline
  *   (components/VoiceNoteRecorder + services/voiceJournal + expo-audio)
  *   mounted behind the entitlement check.
  * - Voice entries (once they exist) render a play/delete row.
+ *
+ * Monochrome reskin: grouped surface blocks, full-brightness type,
+ * Apple-style empty state, inline error with retry for voice-load
+ * failures.
  */
 import { router } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useState } from 'react';
+import { SymbolView } from 'expo-symbols';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -31,9 +34,12 @@ import {
   CravingDots,
   type CravingValue,
 } from '../../../components/CravingDots';
+import { EmptyState } from '../../../components/EmptyState';
+import { Skeleton } from '../../../components/Skeleton';
 import { GlassButton } from '../../../components/glass/GlassButton';
-import { GlassCard } from '../../../components/glass/GlassCard';
 import { Screen } from '../../../components/glass/Screen';
+import { Sheet } from '../../../components/glass/Sheet';
+import { TextField } from '../../../components/glass/TextField';
 import { VoiceNoteRecorder } from '../../../components/VoiceNoteRecorder';
 import { usePremium } from '../../../hooks/usePremium';
 import {
@@ -47,32 +53,33 @@ import {
 } from '../../../services/journal';
 import { useAppState } from '../../../state/AppStateContext';
 import type { JournalEntry } from '../../../types/app';
-import { colors, radii, spacing, type } from '../../../theme/tokens';
+import { radii, spacing, type } from '../../../theme/tokens';
+import { useTheme } from '../../../theme/useTheme';
+import type { Theme } from '../../../theme/tokens';
 
 function formatDuration(millis: number): string {
   const s = Math.floor(millis / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function cravingSeverityColor(value: number): string {
-  if (value <= 2) return colors.success;
-  if (value === 3) return colors.warning;
-  return colors.danger;
-}
-
 function TextEntryRow({
   entry,
   onDelete,
+  theme,
+  last,
 }: {
   entry: JournalEntry;
   onDelete: (id: string) => void;
+  theme: Theme;
+  last: boolean;
 }) {
+  const c = theme.colors;
   const time = new Date(entry.createdAt).toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
   });
   const confirmDelete = () =>
-    Alert.alert("Delete this check-in?", "This can't be undone.", [
+    Alert.alert('Delete this check-in?', "This can't be undone.", [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -84,27 +91,25 @@ function TextEntryRow({
     <Pressable
       onLongPress={confirmDelete}
       delayLongPress={500}
-      style={styles.entry}
+      style={({ pressed }) => [
+        styles.entry,
+        !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
+        pressed && styles.pressed,
+      ]}
     >
-      {entry.craving !== null && (
-        <View
-          style={[
-            styles.severityBar,
-            { backgroundColor: cravingSeverityColor(entry.craving) },
-          ]}
-        />
-      )}
       <View style={styles.entryTop}>
         {entry.craving !== null && (
-          <View style={styles.cravingChip}>
-            <Text style={styles.cravingChipText}>
+          <View style={[styles.cravingChip, { borderColor: c.hairline }]}>
+            <Text style={[styles.cravingChipText, { color: c.metadata }]}>
               Craving {entry.craving}/5
             </Text>
           </View>
         )}
-        <Text style={styles.entryTime}>{time}</Text>
+        <Text style={[styles.entryTime, { color: c.metadata }]}>
+          {time}
+        </Text>
       </View>
-      <Text style={styles.entryNote}>{entry.note}</Text>
+      <Text style={[styles.entryNote, { color: c.text }]}>{entry.note}</Text>
     </Pressable>
   );
 }
@@ -112,10 +117,15 @@ function TextEntryRow({
 function VoiceEntryRow({
   entry,
   onDeleted,
+  theme,
+  last,
 }: {
   entry: VoiceJournalEntry;
   onDeleted: (entries: VoiceJournalEntry[]) => void;
+  theme: Theme;
+  last: boolean;
 }) {
+  const c = theme.colors;
   const player = useAudioPlayer(entry.uri);
   const [playing, setPlaying] = useState(false);
 
@@ -146,12 +156,19 @@ function VoiceEntryRow({
     );
 
   return (
-    <View style={styles.entry}>
+    <View
+      style={[
+        styles.entry,
+        !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
+      ]}
+    >
       <View style={styles.entryTop}>
-        <View style={styles.voiceChip}>
-          <Text style={styles.voiceChipText}>🎙️ Voice note</Text>
+        <View style={[styles.voiceChip, { borderColor: c.hairline }]}>
+          <Text style={[styles.voiceChipText, { color: c.metadata }]}>
+            Voice note
+          </Text>
         </View>
-        <Text style={styles.entryTime}>
+        <Text style={[styles.entryTime, { color: c.metadata }]}>
           {formatDuration(entry.durationMillis)}
         </Text>
       </View>
@@ -160,18 +177,29 @@ function VoiceEntryRow({
           accessibilityRole="button"
           accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
           onPress={toggle}
-          style={styles.voicePlay}
+          style={[styles.voicePlay, { backgroundColor: c.accent }]}
         >
-          <Text style={styles.voicePlayText}>{playing ? '⏸' : '▶️'}</Text>
+          <SymbolView
+            name={playing ? 'pause.fill' : 'play.fill'}
+            tintColor={c.onAccent}
+            style={styles.voicePlayIcon}
+          />
         </Pressable>
-        <View style={styles.voiceWave} />
+        <View
+          style={[
+            styles.voiceWave,
+            { backgroundColor: c.background, borderColor: c.hairline },
+          ]}
+        />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Delete voice note"
           onPress={confirmDelete}
           style={styles.voiceDelete}
         >
-          <Text style={styles.voiceDeleteText}>Delete</Text>
+          <Text style={[styles.voiceDeleteText, { color: c.metadata }]}>
+            Delete
+          </Text>
         </Pressable>
       </View>
     </View>
@@ -188,30 +216,23 @@ function VoiceRecorderSheet({
   onSaved: (entries: VoiceJournalEntry[]) => void;
 }) {
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable onPress={(e) => e.stopPropagation()}>
-          <GlassCard style={styles.sheetCard}>
-            <VoiceNoteRecorder
-              onSaved={(entries) => {
-                onSaved(entries);
-                onClose();
-              }}
-              onCancel={onClose}
-            />
-          </GlassCard>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <Sheet visible={visible} onClose={onClose}>
+      <View style={styles.recorderWrap}>
+        <VoiceNoteRecorder
+          onSaved={(entries) => {
+            onSaved(entries);
+            onClose();
+          }}
+          onCancel={onClose}
+        />
+      </View>
+    </Sheet>
   );
 }
 
 export default function JournalScreen() {
+  const theme = useTheme();
+  const c = theme.colors;
   const { state, loading, addJournal, removeJournalEntry } = useAppState();
   const [note, setNote] = useState('');
   const [craving, setCraving] = useState<CravingValue>(null);
@@ -219,14 +240,31 @@ export default function JournalScreen() {
   const [voiceOpen, setVoiceOpen] = useState(false);
   const { isPremium } = usePremium();
   const [voiceEntries, setVoiceEntries] = useState<VoiceJournalEntry[]>([]);
+  const [voiceError, setVoiceError] = useState(false);
+  const composerRef = useRef<TextInput>(null);
 
   // Voice entries merge into the timeline once the gate opens (Day 5).
   // Behind the gate this stays empty — the pipeline is real, just locked.
   useEffect(() => {
+    let cancelled = false;
+    void listVoiceJournals()
+      .then((entries) => {
+        if (!cancelled) setVoiceEntries(entries);
+      })
+      .catch(() => {
+        if (!cancelled) setVoiceError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const retryVoiceLoad = () => {
+    setVoiceError(false);
     void listVoiceJournals()
       .then(setVoiceEntries)
-      .catch(() => setVoiceEntries([]));
-  }, []);
+      .catch(() => setVoiceError(true));
+  };
 
   const handleSave = async () => {
     const trimmed = note.trim();
@@ -245,9 +283,15 @@ export default function JournalScreen() {
   if (loading || !state) {
     return (
       <Screen>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
-        </View>
+        <ScrollView
+          style={styles.fill}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          <Skeleton width="40%" height={40} style={styles.skelTitle} />
+          <Skeleton width="100%" height={230} />
+          <Skeleton width="100%" height={120} />
+        </ScrollView>
       </Screen>
     );
   }
@@ -267,20 +311,22 @@ export default function JournalScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Journal</Text>
+        <Text style={[styles.title, { color: c.text }]}>Journal</Text>
 
-        <GlassCard style={styles.composer}>
-          <Text style={styles.composerLabel}>How’s the craving right now?</Text>
+        <View style={[styles.composer, { backgroundColor: c.surface }]}>
+          <Text style={[styles.composerLabel, { color: c.text }]}>
+            How’s the craving right now?
+          </Text>
           <CravingDots value={craving} onChange={setCraving} />
-          <TextInput
-            style={styles.noteInput}
+          <TextField
+            ref={composerRef}
             value={note}
             onChangeText={setNote}
             placeholder="What's on your mind?"
-            placeholderTextColor={colors.textTertiary}
             multiline
             maxLength={1000}
-            textAlignVertical="top"
+            inputStyle={styles.noteInput}
+            style={styles.noteField}
           />
           <View style={styles.composerRow}>
             <Pressable
@@ -291,15 +337,24 @@ export default function JournalScreen() {
                   : 'Record a voice note (Sovereign members only)'
               }
               onPress={() => {
+                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 if (isPremium) {
                   setVoiceOpen(true);
                 } else {
                   router.push('/paywall');
                 }
               }}
-              style={styles.micButton}
+              style={({ pressed }) => [
+                styles.micButton,
+                { backgroundColor: c.background },
+                pressed && styles.pressed,
+              ]}
             >
-              <Text style={styles.micText}>{isPremium ? '🎙️' : '🎙️ 🔒'}</Text>
+              <SymbolView
+                name={{ ios: 'mic.fill' as never, android: 'mic' as never }}
+                tintColor={isPremium ? c.accent : c.metadata}
+                style={styles.micIcon}
+              />
             </Pressable>
             <View style={styles.saveWrap}>
               <GlassButton
@@ -309,47 +364,81 @@ export default function JournalScreen() {
               />
             </View>
           </View>
-        </GlassCard>
+        </View>
 
-        {!hasAnything && (
-          <Text style={styles.empty}>
-            No check-ins yet. The first one is the hardest — and the most
-            honest.
-          </Text>
+        {!hasAnything && !voiceError && (
+          <EmptyState
+            symbol="book.closed"
+            materialSymbol="book"
+            headline="No check-ins yet"
+            body="The first one is the hardest — and the most honest."
+            actionTitle="Write a check-in"
+            onAction={() => composerRef.current?.focus()}
+          />
+        )}
+
+        {voiceError && (
+          <View style={[styles.block, { backgroundColor: c.surface }]}>
+            <Text style={[styles.errorTitle, { color: c.text }]}>
+              Couldn’t load voice notes
+            </Text>
+            <Text style={[styles.errorBody, { color: c.metadata }]}>
+              Your text check-ins are safe. This is just the voice list.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={retryVoiceLoad}
+              style={styles.retry}
+            >
+              <Text style={[styles.retryText, { color: c.accent }]}>
+                Try again
+              </Text>
+            </Pressable>
+          </View>
         )}
 
         {voiceEntries.length > 0 && (
           <View style={styles.section}>
-            <Text style={styles.dayHeader}>Voice notes</Text>
-            {voiceEntries.map((v) => (
-              <VoiceEntryRow
-                key={v.id}
-                entry={v}
-                onDeleted={setVoiceEntries}
-              />
-            ))}
+            <Text style={[styles.dayHeader, { color: c.metadata }]}>
+              VOICE NOTES
+            </Text>
+            <View style={[styles.block, { backgroundColor: c.surface }]}>
+              {voiceEntries.map((v, i) => (
+                <VoiceEntryRow
+                  key={v.id}
+                  entry={v}
+                  onDeleted={setVoiceEntries}
+                  theme={theme}
+                  last={i === voiceEntries.length - 1}
+                />
+              ))}
+            </View>
           </View>
         )}
 
         {groups.map((group) => (
           <View key={group.dayKey} style={styles.section}>
-            <Text style={styles.dayHeader}>
-              {formatDayHeader(group.dayKey, nowMs)}
+            <Text style={[styles.dayHeader, { color: c.metadata }]}>
+              {formatDayHeader(group.dayKey, nowMs).toUpperCase()}
             </Text>
-            {group.entries.map((entry) => (
-              <TextEntryRow
-                key={entry.id}
-                entry={entry}
-                onDelete={(id) => {
-                  void removeJournalEntry(id);
-                }}
-              />
-            ))}
+            <View style={[styles.block, { backgroundColor: c.surface }]}>
+              {group.entries.map((entry, i) => (
+                <TextEntryRow
+                  key={entry.id}
+                  entry={entry}
+                  onDelete={(id) => {
+                    void removeJournalEntry(id);
+                  }}
+                  theme={theme}
+                  last={i === group.entries.length - 1}
+                />
+              ))}
+            </View>
           </View>
         ))}
 
         {hasAnything && (
-          <Text style={styles.hint}>
+          <Text style={[styles.hint, { color: c.metadata }]}>
             Tip: long-press an entry to delete it.
           </Text>
         )}
@@ -366,64 +455,51 @@ export default function JournalScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: {
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
     gap: spacing.lg,
   },
-  title: { ...type.title, color: colors.text, marginTop: spacing.sm },
-  composer: { padding: spacing.lg, gap: spacing.md },
-  composerLabel: { ...type.callout, color: colors.textSecondary },
+  title: { ...type.largeTitle },
+  composer: {
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  composerLabel: { ...type.headline },
+  noteField: {},
   noteInput: {
-    ...type.body,
-    color: colors.text,
-    backgroundColor: colors.backgroundElement,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: spacing.md,
     minHeight: 88,
+    textAlignVertical: 'top',
+    paddingTop: spacing.sm,
   },
   composerRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },
   micButton: {
     width: 56,
+    minHeight: 48,
     borderRadius: radii.md,
-    backgroundColor: colors.backgroundElement,
-    borderWidth: 1,
-    borderColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  micText: { fontSize: 20 },
+  micIcon: { width: 22, height: 22 },
+  pressed: { opacity: 0.7 },
   saveWrap: { flex: 1 },
-  empty: {
-    ...type.body,
-    color: colors.textTertiary,
-    textAlign: 'center',
-    marginTop: spacing.lg,
-    lineHeight: 24,
-  },
   section: { gap: spacing.sm },
-  dayHeader: { ...type.caption, color: colors.textTertiary, marginTop: spacing.sm },
-  entry: {
-    backgroundColor: colors.backgroundElevated,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: spacing.md,
-    gap: spacing.xs,
+  dayHeader: {
+    ...type.footnote,
+    letterSpacing: 1,
+    marginTop: spacing.xs,
+  },
+  block: {
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
     overflow: 'hidden',
   },
-  severityBar: {
-    position: 'absolute',
-    left: 0,
-    top: spacing.sm,
-    bottom: spacing.sm,
-    width: 4,
-    borderTopRightRadius: 2,
-    borderBottomRightRadius: 2,
+  entry: {
+    paddingVertical: spacing.md,
+    gap: spacing.xs,
   },
   entryTop: {
     flexDirection: 'row',
@@ -431,57 +507,46 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   cravingChip: {
-    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
-  cravingChipText: { ...type.caption, color: colors.accent },
-  entryTime: { ...type.caption, color: colors.textTertiary },
-  entryNote: { ...type.body, color: colors.text, lineHeight: 22 },
+  cravingChipText: { ...type.caption, fontWeight: '600' },
+  entryTime: { ...type.caption },
+  entryNote: { ...type.body, lineHeight: 24 },
   voiceChip: {
-    backgroundColor: colors.backgroundElement,
+    borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
-  voiceChipText: { ...type.caption, color: colors.textSecondary },
+  voiceChipText: { ...type.caption, fontWeight: '600' },
   voiceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   voicePlay: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.accentSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  voicePlayText: { fontSize: 16 },
+  voicePlayIcon: { width: 18, height: 18 },
   voiceWave: {
     flex: 1,
     height: 24,
     borderRadius: radii.sm,
-    backgroundColor: colors.backgroundElement,
     borderWidth: 1,
-    borderColor: colors.hairline,
   },
-  voiceDelete: { paddingVertical: spacing.sm },
-  voiceDeleteText: { ...type.callout, color: colors.textTertiary },
+  voiceDelete: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
+  voiceDeleteText: { ...type.headline },
   hint: {
-    ...type.caption,
-    color: colors.textTertiary,
+    ...type.footnote,
     textAlign: 'center',
   },
-  sheetBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  sheetCard: {
-    width: '100%',
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.md,
-  },
+  errorTitle: { ...type.headline, paddingTop: spacing.md },
+  errorBody: { ...type.subhead, marginTop: 2 },
+  retry: { paddingVertical: spacing.md, minHeight: 44, justifyContent: 'center' },
+  retryText: { ...type.headline },
+  recorderWrap: { padding: spacing.lg, gap: spacing.md },
+  skelTitle: { marginBottom: spacing.xs },
 });

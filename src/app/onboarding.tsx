@@ -2,6 +2,9 @@
  * Onboarding — 4 steps, no login, ~90 seconds (spec §2.1).
  * 1. Category chips → 2. Three reasons (min 1) → 3. Cost/minutes (skippable → 0)
  * → 4. Pledge time (default 07:00). Creates the Quit and routes to Home.
+ *
+ * Monochrome reskin: pure canvas, full-brightness type, inverted primary
+ * CTA, progress dots, keyboard-aware. Warmth comes from copy, not color.
  */
 import { router } from 'expo-router';
 import React, { useState } from 'react';
@@ -12,14 +15,15 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
 import { GlassButton } from '../../components/glass/GlassButton';
 import { Screen } from '../../components/glass/Screen';
+import { TextField } from '../../components/glass/TextField';
 import { useAppState } from '../../state/AppStateContext';
-import { colors, radii, spacing, type } from '../../theme/tokens';
+import { radii, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/useTheme';
 import {
   QUIT_CATEGORIES,
   QUIT_CATEGORY_LABELS,
@@ -45,6 +49,7 @@ function Stepper({
   max: number;
   format: (v: number) => string;
 }) {
+  const theme = useTheme();
   const step = (delta: number) => {
     let next = value + delta;
     if (next > max) next = min;
@@ -57,27 +62,50 @@ function Stepper({
         accessibilityRole="button"
         accessibilityLabel={`Decrease ${label}`}
         onPress={() => step(-1)}
-        style={({ pressed }) => [styles.stepperBtn, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          { backgroundColor: theme.colors.surface },
+          pressed && styles.pressed,
+        ]}
       >
-        <Text style={styles.stepperGlyph}>−</Text>
+        <Text style={[styles.stepperGlyph, { color: theme.colors.text }]}>
+          −
+        </Text>
       </Pressable>
       <View style={styles.stepperValue}>
-        <Text style={styles.stepperLabel}>{label}</Text>
-        <Text style={styles.stepperNumber}>{format(value)}</Text>
+        <Text style={[styles.stepperLabel, { color: theme.colors.metadata }]}>
+          {label}
+        </Text>
+        <Text
+          style={[
+            styles.stepperNumber,
+            { color: theme.colors.text },
+            styles.tabular,
+          ]}
+        >
+          {format(value)}
+        </Text>
       </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
         onPress={() => step(1)}
-        style={({ pressed }) => [styles.stepperBtn, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.stepperBtn,
+          { backgroundColor: theme.colors.surface },
+          pressed && styles.pressed,
+        ]}
       >
-        <Text style={styles.stepperGlyph}>+</Text>
+        <Text style={[styles.stepperGlyph, { color: theme.colors.text }]}>
+          +
+        </Text>
       </Pressable>
     </View>
   );
 }
 
 export default function OnboardingScreen() {
+  const theme = useTheme();
   const { completeOnboarding } = useAppState();
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -127,6 +155,16 @@ export default function OnboardingScreen() {
     { title: 'The morning nudge', sub: 'We\u2019ll remind you to pledge each day so the streak stays lit. Change it anytime in settings.' },
   ];
 
+  const chipStyle = (selected: boolean) => [
+    styles.chip,
+    {
+      backgroundColor: selected
+        ? theme.colors.accentSoft
+        : theme.colors.surface,
+      borderColor: selected ? theme.colors.accent : 'transparent',
+    },
+  ];
+
   return (
     <Screen>
       <KeyboardAvoidingView
@@ -134,14 +172,32 @@ export default function OnboardingScreen() {
         style={styles.fill}
       >
         <View style={styles.header}>
-          <Pressable accessibilityRole="button" onPress={goBack} style={styles.backBtn}>
-            <Text style={styles.backText}>‹ Back</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={goBack}
+            style={styles.backBtn}
+          >
+            <Text style={[styles.backText, { color: theme.colors.accent }]}>
+              ‹ Back
+            </Text>
           </Pressable>
           <View style={styles.dots}>
             {[0, 1, 2, 3].map((i) => (
               <View
                 key={i}
-                style={[styles.dot, i === step && styles.dotActive, i < step && styles.dotDone]}
+                style={[
+                  styles.dot,
+                  {
+                    backgroundColor:
+                      i === step
+                        ? theme.colors.accent
+                        : i < step
+                          ? theme.colors.accentSoft
+                          : theme.colors.surface,
+                  },
+                  i === step && styles.dotActive,
+                ]}
               />
             ))}
           </View>
@@ -153,8 +209,12 @@ export default function OnboardingScreen() {
           contentContainerStyle={styles.body}
           keyboardShouldPersistTaps="handled"
         >
-          <Text style={styles.title}>{titles[step].title}</Text>
-          <Text style={styles.sub}>{titles[step].sub}</Text>
+          <Text style={[styles.title, { color: theme.colors.text }]}>
+            {titles[step].title}
+          </Text>
+          <Text style={[styles.sub, { color: theme.colors.text }]}>
+            {titles[step].sub}
+          </Text>
 
           {step === 0 && (
             <View style={styles.chips}>
@@ -163,27 +223,32 @@ export default function OnboardingScreen() {
                 return (
                   <Pressable
                     key={c}
-                    accessibilityRole="button"
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
                     onPress={() => setCategory(c)}
                     style={({ pressed }) => [
-                      styles.chip,
-                      selected && styles.chipSelected,
+                      chipStyle(selected),
                       pressed && styles.pressed,
                     ]}
                   >
-                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: theme.colors.text },
+                        selected && styles.chipTextSelected,
+                      ]}
+                    >
                       {QUIT_CATEGORY_LABELS[c]}
                     </Text>
                   </Pressable>
                 );
               })}
               {category === 'custom' && (
-                <TextInput
+                <TextField
                   value={customName}
                   onChangeText={setCustomName}
                   placeholder="Name it — e.g. energy drinks"
-                  placeholderTextColor={colors.textTertiary}
-                  style={styles.input}
+                  style={styles.customField}
                   autoFocus
                 />
               )}
@@ -193,65 +258,88 @@ export default function OnboardingScreen() {
           {step === 1 && (
             <View style={styles.reasons}>
               {REASON_PROMPTS.map((prompt, i) => (
-                <View key={prompt} style={styles.reasonRow}>
-                  <Text style={styles.reasonPrompt}>{prompt}</Text>
-                  <TextInput
-                    value={reasons[i]}
-                    onChangeText={(t) =>
-                      setReasons((r) => r.map((v, j) => (j === i ? t : v)))
-                    }
-                    placeholder="…"
-                    placeholderTextColor={colors.textTertiary}
-                    style={styles.input}
-                    maxLength={120}
-                  />
-                </View>
+                <TextField
+                  key={prompt}
+                  label={prompt}
+                  value={reasons[i]}
+                  onChangeText={(t) =>
+                    setReasons((r) => r.map((v, j) => (j === i ? t : v)))
+                  }
+                  placeholder="…"
+                  maxLength={120}
+                />
               ))}
-              <Text style={styles.hint}>At least one — this is the emotional hook.</Text>
+              <Text style={[styles.hint, { color: theme.colors.metadata }]}>
+                At least one — this is the emotional hook.
+              </Text>
             </View>
           )}
 
           {step === 2 && (
             <View style={styles.math}>
-              <Text style={styles.groupLabel}>About how much did it cost per day?</Text>
+              <Text style={[styles.groupLabel, { color: theme.colors.text }]}>
+                About how much did it cost per day?
+              </Text>
               <View style={styles.presets}>
-                {COST_PRESETS.map((v) => (
-                  <Pressable
-                    key={v}
-                    accessibilityRole="button"
-                    onPress={() => setDailyCost(v)}
-                    style={({ pressed }) => [
-                      styles.preset,
-                      dailyCost === v && styles.presetSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.presetText, dailyCost === v && styles.presetTextSelected]}>
-                      {v === 0 ? 'Skip' : `$${v}`}
-                    </Text>
-                  </Pressable>
-                ))}
+                {COST_PRESETS.map((v) => {
+                  const selected = dailyCost === v;
+                  return (
+                    <Pressable
+                      key={v}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      onPress={() => setDailyCost(v)}
+                      style={({ pressed }) => [
+                        chipStyle(selected),
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.presetText,
+                          { color: theme.colors.text },
+                          selected && styles.presetTextSelected,
+                        ]}
+                      >
+                        {v === 0 ? 'Skip' : `$${v}`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={styles.groupLabel}>How many minutes a day did it take?</Text>
+              <Text style={[styles.groupLabel, { color: theme.colors.text }]}>
+                How many minutes a day did it take?
+              </Text>
               <View style={styles.presets}>
-                {MINUTE_PRESETS.map((v) => (
-                  <Pressable
-                    key={v}
-                    accessibilityRole="button"
-                    onPress={() => setDailyMinutes(v)}
-                    style={({ pressed }) => [
-                      styles.preset,
-                      dailyMinutes === v && styles.presetSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.presetText, dailyMinutes === v && styles.presetTextSelected]}>
-                      {v === 0 ? 'Skip' : `${v}m`}
-                    </Text>
-                  </Pressable>
-                ))}
+                {MINUTE_PRESETS.map((v) => {
+                  const selected = dailyMinutes === v;
+                  return (
+                    <Pressable
+                      key={v}
+                      accessibilityRole="radio"
+                      accessibilityState={{ checked: selected }}
+                      onPress={() => setDailyMinutes(v)}
+                      style={({ pressed }) => [
+                        chipStyle(selected),
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.presetText,
+                          { color: theme.colors.text },
+                          selected && styles.presetTextSelected,
+                        ]}
+                      >
+                        {v === 0 ? 'Skip' : `${v}m`}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={styles.hint}>Skip = we count it as 0. No judgment.</Text>
+              <Text style={[styles.hint, { color: theme.colors.metadata }]}>
+                Skip = we count it as 0. No judgment.
+              </Text>
             </View>
           )}
 
@@ -259,17 +347,29 @@ export default function OnboardingScreen() {
             <View style={styles.time}>
               <View style={styles.timeRow}>
                 <Stepper label="Hour" value={hour12} onChange={setHour12} min={1} max={12} format={(v) => String(v)} />
-                <Text style={styles.timeColon}>:</Text>
+                <Text style={[styles.timeColon, { color: theme.colors.metadata }]}>
+                  :
+                </Text>
                 <Stepper label="Min" value={minute} onChange={setMinute} min={0} max={55} format={(v) => String(v).padStart(2, '0')} />
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel={`Toggle AM PM, currently ${ampm}`}
                   onPress={() => setAmpm(ampm === 'AM' ? 'PM' : 'AM')}
-                  style={({ pressed }) => [styles.ampm, pressed && styles.pressed]}
+                  style={({ pressed }) => [
+                    styles.ampm,
+                    {
+                      backgroundColor: theme.colors.accentSoft,
+                      borderColor: theme.colors.accent,
+                    },
+                    pressed && styles.pressed,
+                  ]}
                 >
-                  <Text style={styles.ampmText}>{ampm}</Text>
+                  <Text style={[styles.ampmText, { color: theme.colors.text }]}>
+                    {ampm}
+                  </Text>
                 </Pressable>
               </View>
-              <Text style={styles.hint}>
+              <Text style={[styles.hint, { color: theme.colors.metadata }]}>
                 We\u2019ll ask for notification permission next — only so we can remind you to pledge.
               </Text>
             </View>
@@ -304,85 +404,79 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
   },
-  backBtn: { paddingVertical: spacing.sm, minWidth: 64 },
-  backText: { ...type.body, color: colors.accent },
+  backBtn: {
+    paddingVertical: spacing.sm,
+    minWidth: 64,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  backText: { ...type.body },
   backSpacer: { minWidth: 64 },
   dots: { flex: 1, flexDirection: 'row', justifyContent: 'center', gap: 8 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.backgroundElement },
-  dotActive: { backgroundColor: colors.accent, width: 24 },
-  dotDone: { backgroundColor: colors.accentSoft },
-  body: { paddingHorizontal: spacing.lg, paddingTop: spacing.xl, paddingBottom: spacing.lg },
-  title: { ...type.title, color: colors.text, marginBottom: spacing.sm },
-  sub: { ...type.body, color: colors.textSecondary, marginBottom: spacing.xl },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  dotActive: { width: 24 },
+  body: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+  },
+  title: { ...type.largeTitle, marginBottom: spacing.sm },
+  sub: { ...type.body, marginBottom: spacing.xl },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radii.pill,
-    backgroundColor: colors.backgroundElement,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  chipSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
-  chipText: { ...type.body, color: colors.textSecondary },
-  chipTextSelected: { color: colors.text, fontWeight: '600' },
-  reasons: { gap: spacing.md },
-  reasonRow: { gap: spacing.xs },
-  reasonPrompt: { ...type.callout, color: colors.textSecondary },
-  input: {
-    ...type.body,
-    color: colors.text,
-    backgroundColor: colors.backgroundElement,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    marginTop: spacing.sm,
-    width: '100%',
-  },
-  hint: { ...type.caption, color: colors.textTertiary, marginTop: spacing.md },
-  math: { gap: spacing.md },
-  groupLabel: { ...type.callout, color: colors.textSecondary, marginTop: spacing.sm },
-  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  preset: {
+    minHeight: 48,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
-    backgroundColor: colors.backgroundElement,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-  },
-  presetSelected: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
-  presetText: { ...type.callout, color: colors.textSecondary },
-  presetTextSelected: { color: colors.text, fontWeight: '600' },
-  time: { gap: spacing.lg },
-  timeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  timeColon: { ...type.hero, color: colors.textTertiary },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  stepperBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.backgroundElement,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperGlyph: { ...type.title, color: colors.text },
+  chipText: { ...type.body },
+  chipTextSelected: { fontWeight: '600' },
+  customField: { width: '100%', marginTop: spacing.sm },
+  reasons: { gap: spacing.md },
+  hint: { ...type.footnote, marginTop: spacing.sm },
+  math: { gap: spacing.md },
+  groupLabel: { ...type.headline, marginTop: spacing.sm },
+  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  presetText: { ...type.body },
+  presetTextSelected: { fontWeight: '600' },
+  time: { gap: spacing.lg },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  timeColon: { ...type.largeTitle },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  stepperBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperGlyph: { ...type.title1 },
   stepperValue: { alignItems: 'center', minWidth: 56 },
-  stepperLabel: { ...type.caption, color: colors.textTertiary },
-  stepperNumber: { ...type.title, color: colors.text },
+  stepperLabel: { ...type.caption },
+  stepperNumber: { ...type.title1 },
+  tabular: { fontVariant: ['tabular-nums'] },
   ampm: {
+    minHeight: 44,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.accent,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  ampmText: { ...type.callout, color: colors.text, fontWeight: '700' },
-  footer: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
+  ampmText: { ...type.headline },
+  footer: {
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
+    paddingTop: spacing.sm,
+  },
   pressed: { opacity: 0.7 },
 });

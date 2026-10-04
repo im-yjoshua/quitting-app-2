@@ -3,16 +3,20 @@
  *
  * Fires ONCE per milestone (wired through hooks/useMilestoneCelebration):
  * the Orb bursts, "N days clean" lands, haptic fanfare plays, and the
- * user can share the moment or continue. Glass everywhere, per HIG.
+ * user can share the moment or continue.
+ *
+ * Monochrome reskin: the Sheet primitive (glass, spring, grabber), the Orb
+ * carrying the color, full-brightness type, inverted Share primary.
  */
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Orb } from './Orb';
 import { GlassButton } from './glass/GlassButton';
-import { GlassSurface } from './glass/GlassSurface';
-import { colors, radii, spacing, type } from '../theme/tokens';
+import { Sheet } from './glass/Sheet';
+import { spacing, type } from '../theme/tokens';
+import { useTheme } from '../theme/useTheme';
 
 interface CelebrationSheetProps {
   visible: boolean;
@@ -34,6 +38,9 @@ export function CelebrationSheet({
   onShare,
   onDismiss,
 }: CelebrationSheetProps) {
+  const theme = useTheme();
+  const c = theme.colors;
+
   useEffect(() => {
     if (!visible) return;
     // Haptic fanfare: success chord, then two rising ticks.
@@ -59,84 +66,49 @@ export function CelebrationSheet({
   }, [visible, milestone]);
 
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      statusBarTranslucent
-      onRequestClose={onDismiss}
-    >
-      <View style={styles.backdrop}>
-        <GlassSurface
-          style={styles.sheet}
-          glassEffectStyle="clear"
-          fallbackIntensity={90}
-        >
-          <View style={styles.inner}>
-            <Text style={styles.kicker}>MILESTONE</Text>
-            <Orb cleanDays={milestone} size={190} />
-            <Text style={styles.headline}>{milestoneLabel(milestone)}</Text>
-            <Text style={styles.sub}>
-              You earned every one of these days.{'\n'}Nobody can take them
-              from you.
-            </Text>
-            <GlassButton title="Share this moment" onPress={onShare} />
-            <Pressable
-              accessibilityRole="button"
-              onPress={onDismiss}
-              style={styles.dismiss}
-            >
-              <Text style={styles.dismissText}>Continue</Text>
-            </Pressable>
-          </View>
-        </GlassSurface>
+    <Sheet visible={visible} onClose={onDismiss} dismissLabel="Continue">
+      <View style={styles.inner}>
+        <Text style={[styles.kicker, { color: c.metadata }]}>MILESTONE</Text>
+        <Orb cleanDays={milestone} size={190} />
+        <Text style={[styles.headline, { color: c.text }]}>
+          {milestoneLabel(milestone)}
+        </Text>
+        <Text style={[styles.sub, { color: c.text }]}>
+          You earned every one of these days.{'\n'}Nobody can take them
+          from you.
+        </Text>
+        <View style={styles.actions}>
+          <GlassButton title="Share this moment" onPress={onShare} />
+          <GlassButton title="Continue" onPress={onDismiss} variant="secondary" />
+        </View>
       </View>
-    </Modal>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(4,6,16,0.72)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: radii.xl,
-    overflow: 'hidden',
-  },
   inner: {
     alignItems: 'center',
-    paddingVertical: spacing.xxl,
-    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg,
     gap: spacing.md,
   },
   kicker: {
     ...type.caption,
-    color: colors.accent,
     letterSpacing: 4,
   },
   headline: {
-    ...type.hero,
-    color: colors.text,
+    ...type.largeTitle,
     textAlign: 'center',
   },
   sub: {
     ...type.body,
-    color: colors.textSecondary,
     textAlign: 'center',
+    lineHeight: 24,
     marginBottom: spacing.sm,
   },
-  dismiss: {
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.lg,
-  },
-  dismissText: {
-    ...type.body,
-    color: colors.textSecondary,
+  actions: {
+    alignSelf: 'stretch',
+    gap: spacing.sm,
   },
 });

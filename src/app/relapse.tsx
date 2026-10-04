@@ -11,6 +11,9 @@
  * The Orb dims honestly on return home via the existing radiance path —
  * startDate resets to now, so Home's orbRadiance(cleanDays) naturally
  * renders day 0 dim. No special-casing needed.
+ *
+ * Monochrome reskin: calm surface panel, full-brightness honest copy,
+ * inverted primary CTA. No red anywhere.
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -21,16 +24,16 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
 import { GlassButton } from '../../components/glass/GlassButton';
-import { GlassCard } from '../../components/glass/GlassCard';
 import { Screen } from '../../components/glass/Screen';
+import { TextField } from '../../components/glass/TextField';
 import { daysCleanBefore } from '../../services/relapse';
 import { useAppState } from '../../state/AppStateContext';
-import { colors, radii, spacing, type } from '../../theme/tokens';
+import { radii, spacing, type } from '../../theme/tokens';
+import { useTheme } from '../../theme/useTheme';
 
 function daysLine(days: number): string {
   if (days <= 0) {
@@ -43,6 +46,7 @@ function daysLine(days: number): string {
 }
 
 export default function RelapseScreen() {
+  const theme = useTheme();
   const { state, loading, logRelapse, pledgeNow, pledgedToday } = useAppState();
   const [phase, setPhase] = useState<'confirm' | 'compassion'>('confirm');
   const [note, setNote] = useState('');
@@ -55,7 +59,7 @@ export default function RelapseScreen() {
     return (
       <Screen>
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.accent} />
+          <ActivityIndicator size="large" color={theme.colors.accent} />
         </View>
       </Screen>
     );
@@ -113,24 +117,34 @@ export default function RelapseScreen() {
         <View style={styles.wrap}>
           {phase === 'confirm' ? (
             <>
-              <GlassCard style={styles.card}>
-                <Text style={styles.title}>Log a slip?</Text>
-                <Text style={styles.sub}>{daysLine(days)}</Text>
-                <Text style={styles.noteLabel}>What triggered it? (optional)</Text>
-                <TextInput
-                  style={styles.noteInput}
+              <View
+                style={[
+                  styles.panel,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+              >
+                <Text style={[styles.title, { color: theme.colors.text }]}>
+                  Log a slip?
+                </Text>
+                <Text style={[styles.sub, { color: theme.colors.text }]}>
+                  {daysLine(days)}
+                </Text>
+                <TextField
+                  label="What triggered it? (optional)"
                   value={note}
                   onChangeText={setNote}
                   placeholder="Noticing the pattern helps future you. No judgment."
-                  placeholderTextColor={colors.textTertiary}
                   multiline
                   maxLength={280}
-                  textAlignVertical="top"
+                  inputStyle={styles.noteInput}
+                  style={styles.noteField}
                 />
-                <Text style={styles.privacy}>
+                <Text
+                  style={[styles.privacy, { color: theme.colors.metadata }]}
+                >
                   Only you ever see this.
                 </Text>
-              </GlassCard>
+              </View>
               <GlassButton
                 title={confirming ? 'Logging…' : 'Log it — gently'}
                 onPress={handleConfirm}
@@ -139,25 +153,49 @@ export default function RelapseScreen() {
               <GlassButton
                 title="Not yet"
                 onPress={() => router.back()}
-                tone="neutral"
+                variant="secondary"
               />
             </>
           ) : (
             <>
-              <GlassCard style={styles.card}>
-                <Text style={styles.title}>Day 1 again — and that’s okay.</Text>
-                <Text style={styles.sub}>
+              <View
+                style={[
+                  styles.panel,
+                  { backgroundColor: theme.colors.surface },
+                ]}
+              >
+                <Text style={[styles.title, { color: theme.colors.text }]}>
+                  Day 1 again — and that’s okay.
+                </Text>
+                <Text style={[styles.sub, { color: theme.colors.text }]}>
                   {loggedDays > 0
                     ? `Those ${loggedDays} day${loggedDays === 1 ? '' : 's'} happened. Nobody can take them from you.`
                     : 'Every streak starts with a single day. This is yours.'}
                 </Text>
-                <View style={styles.longestRow}>
-                  <Text style={styles.longestLabel}>LONGEST STREAK</Text>
-                  <Text style={styles.longestValue}>
+                <View
+                  style={[
+                    styles.longestRow,
+                    { borderTopColor: theme.colors.hairline },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.longestLabel,
+                      { color: theme.colors.metadata },
+                    ]}
+                  >
+                    LONGEST STREAK
+                  </Text>
+                  <Text
+                    style={[
+                      styles.longestValue,
+                      { color: theme.colors.text },
+                    ]}
+                  >
                     {longestAfter} day{longestAfter === 1 ? '' : 's'} — you’ll beat it.
                   </Text>
                 </View>
-              </GlassCard>
+              </View>
               <GlassButton
                 title={pledging ? 'Pledging…' : pledged ? 'Back home' : 'Pledge today'}
                 onPress={handlePledgeAndHome}
@@ -178,38 +216,29 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: spacing.lg,
     justifyContent: 'center',
-    gap: spacing.lg,
+    gap: spacing.md,
   },
-  card: { padding: spacing.xl },
-  title: { ...type.title, color: colors.text, marginBottom: spacing.sm },
-  sub: { ...type.body, color: colors.textSecondary, lineHeight: 24 },
-  noteLabel: {
-    ...type.callout,
-    color: colors.textSecondary,
-    marginTop: spacing.lg,
-    marginBottom: spacing.xs,
+  panel: {
+    borderRadius: radii.lg,
+    padding: spacing.xl,
   },
+  title: { ...type.title1, marginBottom: spacing.sm },
+  sub: { ...type.body, lineHeight: 24 },
+  noteField: { marginTop: spacing.lg },
   noteInput: {
-    ...type.body,
-    color: colors.text,
-    backgroundColor: colors.backgroundElement,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: colors.hairline,
-    padding: spacing.md,
     minHeight: 96,
+    textAlignVertical: 'top',
+    paddingTop: spacing.sm,
   },
   privacy: {
     ...type.caption,
-    color: colors.textTertiary,
     marginTop: spacing.sm,
   },
   longestRow: {
     marginTop: spacing.lg,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: colors.hairline,
   },
-  longestLabel: { ...type.caption, color: colors.textTertiary },
-  longestValue: { ...type.headline, color: colors.text, marginTop: spacing.xs },
+  longestLabel: { ...type.caption, letterSpacing: 1.5 },
+  longestValue: { ...type.headline, marginTop: spacing.xs },
 });
