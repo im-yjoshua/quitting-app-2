@@ -30,3 +30,26 @@ comment on them, so resolutions are recorded here and linked from commits).
 bundle HTTP 200.
 
 **Verdict:** no defects found. Nothing to fix.
+
+## Phase B — real icon + splash artwork (`501119f`)
+
+**QA date:** 2026-10-09. **Reviewer:** Jarvis (autopilot).
+
+**What shipped:** generated brand assets (luminous violet orb on pure black)
+installed as `icon.png` (1024x1024), `splash-icon.png`, `favicon.png`
+(48x48), Android adaptive foreground / solid-black background /
+white-silhouette monochrome; `app.json` canvas colors `#07090E` → `#000000`
+(7 occurrences: root, ios, android, adaptiveIcon, splash plugin ×2,
+notification color).
+
+**Checks:**
+- Icon + splash visually approved (orb matches the redesign's Orb-as-hero
+  language; monochrome silhouette alpha verified: 25.3% orb, rest
+  transparent — renders correctly as a themed icon).
+- `app.json` valid JSON; all referenced asset paths exist on disk.
+- `npx expo start`: boots with no asset warnings; entry bundle HTTP 200.
+- `npm test`: green.
+- Old Expo placeholder files (`react-logo.png`, `expo-logo.png`, …) remain
+  on disk but are unreferenced by code or config — left alone (harmless).
+
+**Verdict:** no defects found. Nothing to fix.
