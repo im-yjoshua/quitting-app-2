@@ -26,6 +26,7 @@ import { GlassButton } from '../../../components/glass/GlassButton';
 import { GlassToggle } from '../../../components/glass/GlassToggle';
 import { Screen } from '../../../components/glass/Screen';
 import { TextField } from '../../../components/glass/TextField';
+import { TimePickerSheet } from '../../../components/TimePickerSheet';
 import { PRIVACY_POLICY_URL, SUPPORT_EMAIL } from '../../../constants';
 import {
   eraseAllAppData,
@@ -53,6 +54,7 @@ import {
   requestNotificationPermissions,
   scheduleDailyCheckIn,
 } from '../../../services/notifications';
+import { formatPledgeTime12h } from '../../../services/pledgeTime';
 import { restorePurchasesWithBiometrics } from '../../../services/purchases';
 import { cleanDaysFloor } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
@@ -147,7 +149,8 @@ function Row({
 export default function YouScreen() {
   const theme = useTheme();
   const c = theme.colors;
-  const { state, loading, updateSettings, refresh } = useAppState();
+  const { state, loading, updateSettings, updatePledgeTime, refresh } =
+    useAppState();
   const { isPremium } = usePremium();
   // Purity rule: Date.now() can't run in the render body — snapshot it once.
   const [nowSnapshot] = useState(() => Date.now());
@@ -156,6 +159,7 @@ export default function YouScreen() {
   const [commitments, setCommitments] = useState<AppCommitmentState | null>(null);
   const [newApp, setNewApp] = useState('');
   const [guideOpen, setGuideOpen] = useState(false);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && state && !state.quit) router.replace('/onboarding');
@@ -258,8 +262,30 @@ export default function YouScreen() {
     }
   };
 
-  const handleMilestoneAlerts = async (next: boolean) => {
-    await updateSettings({ milestoneAlerts: next });
+  // ---- Pledge time ----
+  const handleSavePledgeTime = async (time: string) => {
+    setTimeSheetOpen(false);
+    await updatePledgeTime(time);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    // Re-point the daily nudge at the new time. The scheduler is idempotent,
+    // so the old slot must be cancelled first or the new time never takes.
+    if (!settings.pledgeReminder) return;
+    try {
+      await cancelScheduledNotification(DAILY_ENCOURAGEMENT_IDENTIFIER);
+      const [h, m] = time.split(':').map(Number);
+      const id = await scheduleDailyCheckIn(h, m);
+      if (!id) {
+        Alert.alert(
+          'Notifications off',
+          'Enable notifications in Settings to get your morning pledge nudge.'
+        );
+      }
+    } catch {
+      // Best-effort.
+    }
+  };
+
+  const handleMilestoneAlerts = async (next: boolean) => {    await updateSettings({ milestoneAlerts: next });
     if (!next) {
       try {
         await cancelScheduledNotification(MILESTONE_EVE_IDENTIFIER);
@@ -432,11 +458,23 @@ export default function YouScreen() {
           <View style={styles.togglePad}>
             <GlassToggle
               label="Morning pledge reminder"
-              hint={`Daily at ${quit.pledgeTime}`}
+              hint="A gentle nudge to start the day"
               value={settings.pledgeReminder}
               onValueChange={handlePledgeReminder}
             />
           </View>
+          <View
+            style={[styles.insetDivider, { backgroundColor: c.hairline }]}
+          />
+          <Row
+            theme={theme}
+            label="Pledge time"
+            value={formatPledgeTime12h(quit.pledgeTime)}
+            chevron
+            last
+            accessibilityLabel={`Pledge time, currently ${formatPledgeTime12h(quit.pledgeTime)}. Tap to change.`}
+            onPress={() => setTimeSheetOpen(true)}
+          />
           <View
             style={[styles.insetDivider, { backgroundColor: c.hairline }]}
           />
@@ -712,6 +750,13 @@ export default function YouScreen() {
 
         <View style={{ height: spacing.xxl }} />
       </ScrollView>
+
+      <TimePickerSheet
+        visible={timeSheetOpen}
+        initialTime={quit.pledgeTime}
+        onSave={handleSavePledgeTime}
+        onClose={() => setTimeSheetOpen(false)}
+      />
     </Screen>
   );
 }

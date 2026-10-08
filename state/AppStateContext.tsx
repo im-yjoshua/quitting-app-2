@@ -16,7 +16,12 @@ import React, {
 import { AppState as RNAppState } from 'react-native';
 import { router } from 'expo-router';
 
-import type { AppState } from '../types/app';
+import type {
+  AppSettings,
+  AppState,
+  JournalEntry,
+  RelapseEntry,
+} from '../types/app';
 import {
   loadAppState,
   saveAppState,
@@ -32,6 +37,7 @@ import {
   createQuitFromAnswers,
   type OnboardingAnswers,
 } from '../services/onboarding';
+import { applyPledgeTime } from '../services/pledgeTime';
 import {
   requestNotificationPermissions,
   scheduleDailyCheckIn,
@@ -44,7 +50,6 @@ import {
   createJournalEntry,
   deleteJournalEntry,
 } from '../services/journal';
-import type { AppSettings, JournalEntry, RelapseEntry } from '../types/app';
 
 interface AppStateContextValue {
   /** null while loading */
@@ -68,6 +73,8 @@ interface AppStateContextValue {
   markMilestonesSeen: (days: number[]) => Promise<void>;
   /** Patches settings (notification toggles, orb theme, share card style). */
   updateSettings: (partial: Partial<AppSettings>) => Promise<void>;
+  /** Sets the daily pledge reminder time ("HH:MM", 24h). Throws on bad format. */
+  updatePledgeTime: (time: string) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -219,6 +226,14 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const updatePledgeTime = useCallback(
+    async (time: string): Promise<void> => {
+      const next = await updateAppState((prev) => applyPledgeTime(prev, time));
+      setState(next);
+    },
+    []
+  );
+
   const value = useMemo<AppStateContextValue>(
     () => ({
       state,
@@ -232,6 +247,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       removeJournalEntry,
       markMilestonesSeen,
       updateSettings,
+      updatePledgeTime,
       refresh,
     }),
     [
@@ -246,6 +262,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       removeJournalEntry,
       markMilestonesSeen,
       updateSettings,
+      updatePledgeTime,
       refresh,
     ]
   );
