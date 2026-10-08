@@ -53,3 +53,27 @@ notification color).
   on disk but are unreferenced by code or config — left alone (harmless).
 
 **Verdict:** no defects found. Nothing to fix.
+
+## Phase D — QA hardening pass
+
+**QA date:** 2026-10-09. **Reviewer:** Jarvis (autopilot).
+
+**Findings (all fixed + verified):**
+1. expo-doctor 20/21 — 9 SDK-57 packages out of date (expo-asset,
+   expo-constants, expo-linking, expo-notifications, expo-router + 4).
+   Fixed: `npx expo install --fix`. Now 21/21.
+2. Last lint error — `setReady(true)` directly in an effect
+   (`src/app/_layout.tsx`, vestigial Day-1 gate; state hydration lives in
+   AppStateProvider now). Fixed: removed the `ready` gate; splash hides on
+   mount, RevenueCat bridge warms in background. First-render timing
+   preserved as closely as possible (was: one deferred commit).
+3. Unused dep — `@expo/ui`, zero references anywhere. Removed.
+   (expo-linking/device/image/web-browser/system-ui kept: Expo platform
+   surface, doctor-validated; removing router-adjacent deps risks breakage.)
+4. TODO/placeholder scan — all hits legitimate (input hints, skeletons,
+   dev-key guard). No dead TODOs.
+
+**Verification:** doctor 21/21 · lint clean · tsc clean · 158/158 tests
+green · expo start boots, entry HTTP 200, no errors.
+
+**Verdict:** all findings closed. Nothing outstanding.

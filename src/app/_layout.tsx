@@ -1,7 +1,7 @@
 import { Slot } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
 import { AppStateProvider } from '../../state/AppStateContext';
 import {
@@ -20,11 +20,10 @@ function ThemedStatusBar() {
 }
 
 export default function RootLayout() {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
-    // State hydration now lives in AppStateProvider (Day 2+).
-    setReady(true);
+    // Splash hides right after mount (state hydration lives in
+    // AppStateProvider); the purchase bridge warms in the background.
+    void SplashScreen.hideAsync();
     // Day 5: warm the RevenueCat bridge at launch and re-verify the
     // entitlement snapshot so gates reflect real subscription state.
     void initializePurchases()
@@ -35,14 +34,6 @@ export default function RootLayout() {
         // Gating falls back to the trusted offline snapshot — never crash.
       });
   }, []);
-
-  useEffect(() => {
-    if (ready) {
-      void SplashScreen.hideAsync();
-    }
-  }, [ready]);
-
-  if (!ready) return null;
 
   return (
     <AppStateProvider>
