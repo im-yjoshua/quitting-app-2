@@ -17,7 +17,6 @@ import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import React, { useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -28,6 +27,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GhostButton } from '../../components/ui/GhostButton';
 import { InvertedButton } from '../../components/ui/InvertedButton';
 import { Screen } from '../../components/ui/Screen';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { daysCleanBefore } from '../../services/relapse';
 import { useAppState } from '../../state/AppStateContext';
 import { radii, spacing, type as typeScale } from '../../theme/tokens';
@@ -123,9 +123,34 @@ export default function RelapseScreen() {
 
   if (loading || !state) {
     return (
-      <Screen>
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={theme.colors.accent} />
+      <Screen edges={['top', 'left', 'right', 'bottom']}>
+        <View style={styles.backdrop} testID="relapse-loading">
+          <View
+            style={[
+              styles.panel,
+              {
+                backgroundColor: theme.colors.background,
+                borderColor: theme.colors.hairline,
+                paddingBottom: insets.bottom + spacing.lg,
+              },
+            ]}
+          >
+            <View style={styles.grabberZone}>
+              <View
+                style={[
+                  styles.grabber,
+                  { backgroundColor: theme.colors.metadata },
+                ]}
+              />
+            </View>
+            <View style={styles.skelBody}>
+              <Skeleton width="70%" height={24} style={styles.skelCenter} />
+              <Skeleton width="88%" height={18} style={styles.skelCenter} />
+              <Skeleton width="100%" height={96} radius={radii.lg} />
+              <Skeleton width="100%" height={50} radius={radii.md} />
+              <Skeleton width="100%" height={50} radius={radii.md} />
+            </View>
+          </View>
         </View>
       </Screen>
     );
@@ -275,7 +300,11 @@ export default function RelapseScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  skelBody: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  skelCenter: { alignSelf: 'center' },
   backdrop: {
     flex: 1,
     justifyContent: 'flex-end',

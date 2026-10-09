@@ -57,12 +57,14 @@ const STAGGER_MS = 60;
 
 function Bars({ buckets, theme }: { buckets: StatsBucket[]; theme: Theme }) {
   const c = theme.colors;
+  // Reduce Motion → no stagger: the bars land as one static chart.
+  const reduceMotion = useReducedMotion();
   return (
     <View style={[styles.bars, { height: CHART_HEIGHT }]}>
       {buckets.map((b, i) => (
         <Animated.View
           key={b.key}
-          entering={FadeIn.delay(i * STAGGER_MS)}
+          entering={reduceMotion ? undefined : FadeIn.delay(i * STAGGER_MS)}
           style={styles.barCol}
         >
           <View style={styles.barTrack}>
@@ -313,7 +315,7 @@ export default function StatsScreen() {
 
         {/* Totals — money saved is the hero metric. */}
         <Animated.View
-          entering={FadeIn.delay(0)}
+          entering={reduceMotion ? undefined : FadeIn.delay(0)}
           style={[styles.totals, { backgroundColor: c.surface }]}
         >
           <View style={styles.totalCol}>
@@ -373,7 +375,7 @@ export default function StatsScreen() {
             return (
               <Animated.View
                 key={m}
-                entering={FadeIn.delay(i * STAGGER_MS)}
+                entering={reduceMotion ? undefined : FadeIn.delay(i * STAGGER_MS)}
                 style={[
                   styles.msRow,
                   i < MILESTONES.length - 1 && {
@@ -382,37 +384,41 @@ export default function StatsScreen() {
                   },
                 ]}
               >
-                <View
-                  style={[
-                    styles.msBadge,
-                    {
-                      borderColor: achieved ? c.accent : c.hairline,
-                      backgroundColor: achieved ? c.accent : 'transparent',
-                    },
-                  ]}
-                >
-                  <Text
+                {/* Badge + label read as one VoiceOver unit; the share
+                    button stays its own target. */}
+                <View accessible style={styles.msInfo}>
+                  <View
                     style={[
-                      styles.msBadgeText,
-                      { color: achieved ? c.onAccent : c.metadata },
+                      styles.msBadge,
+                      {
+                        borderColor: achieved ? c.accent : c.hairline,
+                        backgroundColor: achieved ? c.accent : 'transparent',
+                      },
                     ]}
                   >
-                    {m}
+                    <Text
+                      style={[
+                        styles.msBadgeText,
+                        { color: achieved ? c.onAccent : c.metadata },
+                      ]}
+                    >
+                      {m}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.msLabel,
+                      { color: achieved || upcoming ? c.text : c.metadata },
+                    ]}
+                  >
+                    {m === 365
+                      ? 'One full year'
+                      : m === 1
+                        ? 'First day'
+                        : `${m} days`}
+                    {upcoming ? ' · next' : ''}
                   </Text>
                 </View>
-                <Text
-                  style={[
-                    styles.msLabel,
-                    { color: achieved || upcoming ? c.text : c.metadata },
-                  ]}
-                >
-                  {m === 365
-                    ? 'One full year'
-                    : m === 1
-                      ? 'First day'
-                      : `${m} days`}
-                  {upcoming ? ' · next' : ''}
-                </Text>
                 {achieved && (
                   <Pressable
                     accessibilityRole="button"
@@ -538,6 +544,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: spacing.sm,
     minHeight: 56,
+  },
+  msInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   msBadge: {
     width: 44,

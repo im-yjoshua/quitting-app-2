@@ -22,7 +22,6 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   AppState as RNAppState,
   StyleSheet,
   Text,
@@ -31,7 +30,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FAB, GhostButton, GlassCard, ProgressRing, Screen } from '../../../components/ui';
+import { FAB, GhostButton, GlassCard, ProgressRing, Screen, Skeleton } from '../../../components/ui';
 import { Orb } from '../../../components/orb';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
@@ -46,7 +45,24 @@ import { useAppState } from '../../../state/AppStateContext';
 import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
 import { usePremium } from '../../../hooks/usePremium';
 import { useTheme } from '../../../theme/useTheme';
-import { spacing, type as typeScale } from '../../../theme/tokens';
+import { spacing, radii, type as typeScale } from '../../../theme/tokens';
+
+/** Loading state: skeletons in the shape of the Home layout (orb circle,
+ * ticker lines, pledge card, milestone block). Layout is known, so no
+ * full-screen spinner. */
+function HomeSkeleton({ orbSize }: { orbSize: number }) {
+  return (
+    <View style={styles.skelContent} testID="home-loading">
+      <View style={styles.skelOrbWrap}>
+        <Skeleton width={orbSize} height={orbSize} radius={orbSize / 2} />
+      </View>
+      <Skeleton width="55%" height={34} style={styles.skelCenter} />
+      <Skeleton width="40%" height={16} style={styles.skelCenter} />
+      <Skeleton width="100%" height={118} radius={radii.lg} />
+      <Skeleton width="100%" height={132} radius={radii.lg} />
+    </View>
+  );
+}
 
 export default function HomeScreen() {
   const { state, loading, pledgeNow } = useAppState();
@@ -93,12 +109,12 @@ export default function HomeScreen() {
     }
   }, [loading, state]);
 
+  const orbSize = Math.min(width * 0.62, 300);
+
   if (loading || !state) {
     return (
       <Screen>
-        <View style={styles.loading} testID="home-loading">
-          <ActivityIndicator size="large" color={theme.colors.text} />
-        </View>
+        <HomeSkeleton orbSize={orbSize} />
       </Screen>
     );
   }
@@ -111,7 +127,6 @@ export default function HomeScreen() {
 
   const pledged = hasPledgedToday(state.pledge, nowMs);
   const pledgeStreak = state.pledge.pledgeStreak;
-  const orbSize = Math.min(width * 0.62, 300);
 
   // Next milestone: progress measured from the previous milestone so the
   // ring fills between them ("13 days to 60 days" at day 47).
@@ -213,14 +228,12 @@ export default function HomeScreen() {
                   {next - days} days to {next} days
                 </Text>
               </View>
+              {/* Decorative twin of the ring above (which already exposes
+                  the progressbar role) — hidden from VoiceOver. */}
               <View
                 style={[styles.track, { backgroundColor: theme.colors.hairline }]}
-                accessibilityRole="progressbar"
-                accessibilityValue={{
-                  now: Math.round(milestoneProgress * 100),
-                  min: 0,
-                  max: 100,
-                }}
+                accessible={false}
+                importantForAccessibility="no-hide-descendants"
               >
                 <View
                   style={[
@@ -279,7 +292,13 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  skelContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
+  },
+  skelOrbWrap: { alignItems: 'center' },
+  skelCenter: { alignSelf: 'center' },
   orbZone: {
     alignItems: 'center',
     justifyContent: 'center',

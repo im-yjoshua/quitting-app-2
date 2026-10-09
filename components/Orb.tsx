@@ -28,6 +28,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withRepeat,
   withSpring,
@@ -134,21 +135,28 @@ export function Orb({
   const press = useSharedValue(1);
   const shimmerX = useSharedValue(-1);
 
+  // Reduce Motion → fully static, like the v3 orb.
+  const reduceMotion = useReducedMotion();
+  const animAllowed = animated && !reduceMotion;
+
   // Calm breathe on a slow spring — interruptible, reversible, UI thread.
   useEffect(() => {
-    if (!animated) return;
+    if (!animAllowed) {
+      breathe.value = 1;
+      return;
+    }
     breathe.value = withRepeat(
       withSpring(1.045, { damping: 22, stiffness: 45 }),
       -1,
       true
     );
     return () => cancelAnimation(breathe);
-  }, [animated, breathe]);
+  }, [animAllowed, breathe]);
 
   // Shimmer sweep — only for luminous streaks (t ≥ ~0.85, i.e. 60d+,
   // full by 90d). Slow, calm, UI-thread.
   const shimmerT = smoothstep(0.85, 0.97, t);
-  const shimmerActive = animated && shimmerT > 0;
+  const shimmerActive = animAllowed && shimmerT > 0;
   useEffect(() => {
     if (!shimmerActive) return;
     shimmerX.value = withRepeat(
@@ -169,9 +177,11 @@ export function Orb({
   }));
 
   const handlePressIn = () => {
+    if (reduceMotion) return;
     press.value = withSpring(motion.pressScale, motion.press);
   };
   const handlePressOut = () => {
+    if (reduceMotion) return;
     press.value = withSpring(1, motion.press);
   };
   const handlePress = () => {

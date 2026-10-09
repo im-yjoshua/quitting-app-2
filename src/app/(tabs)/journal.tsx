@@ -123,7 +123,18 @@ function TextEntryRow({
         <DeleteAction onPress={confirmDelete} theme={theme} label="Delete check-in" />
       )}
     >
+      {/* Grouped for VoiceOver (time + note as one unit); the swipe
+          action is also exposed as a delete accessibility action. */}
       <View
+        accessible
+        accessibilityLabel={
+          `Check-in${entry.craving !== null ? `, craving ${entry.craving} of 5` : ''}, ` +
+          `${formatTime(entry.createdAt)}: ${entry.note}`
+        }
+        accessibilityActions={[{ name: 'delete', label: 'Delete check-in' }]}
+        onAccessibilityAction={(event) => {
+          if (event.nativeEvent.actionName === 'delete') confirmDelete();
+        }}
         style={[
           styles.entry,
           !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
@@ -201,7 +212,17 @@ function VoiceEntryRow({
           !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
         ]}
       >
-        <View style={styles.entryTop}>
+        {/* Metadata grouped for VoiceOver with its own delete action; the
+            play button stays a separate target. */}
+        <View
+          accessible
+          accessibilityLabel={`Voice note, ${formatDuration(entry.durationMillis)}`}
+          accessibilityActions={[{ name: 'delete', label: 'Delete voice note' }]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'delete') confirmDelete();
+          }}
+          style={styles.entryTop}
+        >
           <View style={[styles.chip, { borderColor: c.hairline }]}>
             <Text style={[styles.chipText, { color: c.metadata }]}>
               Voice note
@@ -407,7 +428,6 @@ export default function JournalScreen() {
   };
 
   const openVoice = () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (isPremium) {
       setVoiceOpen(true);
     } else {

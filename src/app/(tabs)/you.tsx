@@ -22,7 +22,6 @@ import { router } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
@@ -40,6 +39,7 @@ import {
   Screen,
   SectionHeader,
   SegmentedControl,
+  Skeleton,
 } from '../../../components/ui';
 import { PRIVACY_POLICY_URL, SUPPORT_EMAIL } from '../../../constants';
 import {
@@ -198,6 +198,18 @@ function Footer({ theme, children }: { theme: Theme; children: string }) {
   );
 }
 
+/** Loading state: skeletons in the shape of the inset-grouped list. */
+function YouSkeleton() {
+  return (
+    <View style={styles.skelContent} testID="you-loading">
+      <Skeleton width="28%" height={40} style={styles.skelGap} />
+      <Skeleton width="100%" height={150} radius={radii.md} style={styles.skelGap} />
+      <Skeleton width="100%" height={110} radius={radii.md} style={styles.skelGap} />
+      <Skeleton width="100%" height={196} radius={radii.md} />
+    </View>
+  );
+}
+
 export default function YouScreen() {
   const theme = useTheme();
   const c = theme.colors;
@@ -224,10 +236,8 @@ export default function YouScreen() {
 
   if (loading || !state?.quit) {
     return (
-      <Screen>
-        <View style={styles.loading}>
-          <ActivityIndicator color={c.accent} />
-        </View>
+      <Screen scrollable scrollContentStyle={styles.content}>
+        <YouSkeleton />
       </Screen>
     );
   }
@@ -555,7 +565,7 @@ export default function YouScreen() {
                   if (locked) {
                     router.push('/paywall');
                   } else {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    void Haptics.selectionAsync();
                     void updateSettings({ orbTheme: t.id });
                   }
                 }}
@@ -802,7 +812,8 @@ export default function YouScreen() {
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  skelContent: { paddingTop: spacing.sm },
+  skelGap: { marginBottom: spacing.md },
   content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
   title: { ...typeScale.largeTitle, marginBottom: spacing.sm },
   group: {

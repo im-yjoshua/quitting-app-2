@@ -19,6 +19,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
 import { GhostButton } from './ui/GhostButton';
 import { InvertedButton } from './ui/InvertedButton';
@@ -109,6 +110,7 @@ function DrumColumn({
 }) {
   const theme = useTheme();
   const c = theme.colors;
+  const reduceMotion = useReducedMotion();
   const listRef = useRef<FlatList<number | null>>(null);
 
   // nulls pad top/bottom so the first/last value can center.
@@ -125,7 +127,10 @@ function DrumColumn({
     // Already there: the drag/momentum end pair fires twice for one flick;
     // the second lands after the re-render with the new value in closure.
     if (clamped === values.indexOf(value)) return;
-    listRef.current?.scrollToIndex({ index: clamped + 2, animated: true });
+    listRef.current?.scrollToIndex({
+      index: clamped + 2,
+      animated: !reduceMotion,
+    });
     void Haptics.selectionAsync();
     onChange(values[clamped]);
   };

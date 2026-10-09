@@ -363,8 +363,10 @@ const styles = StyleSheet.create({
   caption: {
     fontWeight: '600',
     marginTop: 4,
-    textShadowColor: 'rgba(0,0,0,0.35)',
-    textShadowRadius: 4,
+    // White caption on mid-violet sits ≈4.0:1 — the stronger shadow is the
+    // scrim that keeps it legible against the brightest gradient stops.
+    textShadowColor: 'rgba(0,0,0,0.55)',
+    textShadowRadius: 6,
     textShadowOffset: { width: 0, height: 1 },
   },
 });

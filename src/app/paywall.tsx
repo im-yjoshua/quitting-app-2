@@ -239,7 +239,7 @@ export default function PaywallScreen() {
                 accessibilityState={{ checked: active }}
                 accessibilityLabel={`${t.name} plan, ${t.price} ${t.note}`}
                 onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  void Haptics.selectionAsync();
                   setSelected(t.plan);
                 }}
                 style={({ pressed }) => pressed && styles.pressed}
@@ -273,7 +273,9 @@ export default function PaywallScreen() {
                           ]}
                         >
                           <Text
-                            style={[styles.heroTagText, { color: c.accent }]}
+                            // Full-brightness label: violet-on-wash falls
+                            // below 4.5:1 in light mode at 12pt.
+                            style={[styles.heroTagText, { color: c.text }]}
                           >
                             BEST VALUE
                           </Text>

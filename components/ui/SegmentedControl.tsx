@@ -109,6 +109,8 @@ export function SegmentedControl({
               accessibilityRole="tab"
               accessibilityState={{ selected }}
               accessibilityLabel={segment}
+              // 32pt visual → 48pt touchable (44pt minimum).
+              hitSlop={{ top: 8, bottom: 8 }}
               style={styles.segment}
             >
               <Text

@@ -83,7 +83,7 @@ export function ShareCardSheet({
       onRequestPremium();
       return;
     }
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    void Haptics.selectionAsync();
     setStyle(next);
   };
 
