@@ -47,6 +47,27 @@ export interface RingAngles {
   left: number;
 }
 
+/** Craving intensity on the 1–5 scale (null = skipped). */
+export type IntensityValue = 1 | 2 | 3 | 4 | 5 | null;
+
+/**
+ * One honest line for the urge-surf end screen, comparing the optional
+ * start and end intensity ratings. Returns null when either rating was
+ * skipped — the delta line is only shown when both were given.
+ *
+ * Copy rule: kind, factual, identity-respecting — never labels the person,
+ * never frames a setback as an identity (phase-gate audit).
+ */
+export function intensityDeltaCopy(
+  start: IntensityValue,
+  end: IntensityValue
+): string | null {
+  if (start === null || end === null) return null;
+  if (end < start) return `From ${start} to ${end}. The wave passed.`;
+  if (end === start) return `Steady at ${start}. You stayed with it.`;
+  return `From ${start} to ${end} — some waves run bigger. You’re still here.`;
+}
+
 /**
  * Arc angles for the two-half progress-ring technique.
  *

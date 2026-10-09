@@ -1,39 +1,52 @@
 /**
- * Relapse flow — the churn firewall (spec §2.4).
+ * Relapse flow (v3 rebuild, plan §3.4) — the compassionate sheet → ritual.
  *
  * Two phases:
- * 1. Confirmation: "Log a slip? Your N days still count — your body healed
- *    for N days." + optional trigger note. Quiet styling — NEVER red/error,
- *    NEVER "failed" or identity-shaming copy.
- * 2. Compassion: longest streak preserved, "Day 1 again — and that's okay",
- *    immediate "Pledge today" CTA.
+ * 1. Sheet: "This doesn't erase your progress." Calm, no red, no warnings,
+ *    optional multi-select "What happened?" trigger chips (skippable).
+ *    "Begin again" (inverted) applies the reset.
+ * 2. Day 0 ritual: honors the last streak, then the day-1 pledge CTA.
  *
- * The Orb dims honestly on return home via the existing radiance path —
- * startDate resets to now, so Home's orbRadiance(cleanDays) naturally
- * renders day 0 dim. No special-casing needed.
- *
- * Monochrome reskin: calm surface panel, full-brightness honest copy,
- * inverted primary CTA. No red anywhere.
+ * Keeps the v2 reset contract exactly: logRelapse(note) → applyRelapse
+ * state math + persistence, then pledgeNow() before heading home.
+ * Copy contract: calm, compassionate, identity-respecting language
+ * throughout (phase-gate language audit in the commit report).
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { GlassButton } from '../../components/glass/GlassButton';
-import { Screen } from '../../components/glass/Screen';
-import { TextField } from '../../components/glass/TextField';
+import { GhostButton } from '../../components/ui/GhostButton';
+import { InvertedButton } from '../../components/ui/InvertedButton';
+import { Screen } from '../../components/ui/Screen';
 import { daysCleanBefore } from '../../services/relapse';
 import { useAppState } from '../../state/AppStateContext';
-import { radii, spacing, type } from '../../theme/tokens';
+import { radii, spacing, type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/useTheme';
+
+const TRIGGERS = [
+  'tired',
+  'stress',
+  'bored',
+  'loneliness',
+  'alcohol',
+  'argument',
+  'habit',
+  'celebration',
+  'social',
+  'other',
+] as const;
+
+type Trigger = (typeof TRIGGERS)[number];
 
 function daysLine(days: number): string {
   if (days <= 0) {
@@ -45,11 +58,64 @@ function daysLine(days: number): string {
   return `Your ${days} days still count — your body healed for ${days} days.`;
 }
 
+function TriggerChips({
+  selected,
+  onToggle,
+}: {
+  selected: Trigger[];
+  onToggle: (t: Trigger) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <View style={styles.chips}>
+      {TRIGGERS.map((t) => {
+        const isSelected = selected.includes(t);
+        return (
+          <Pressable
+            key={t}
+            accessibilityRole="checkbox"
+            accessibilityLabel={t}
+            accessibilityState={{ checked: isSelected }}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              onToggle(t);
+            }}
+            style={[
+              styles.chip,
+              {
+                borderColor: isSelected
+                  ? theme.colors.accent
+                  : theme.colors.hairline,
+                backgroundColor: isSelected
+                  ? theme.colors.accentSoft
+                  : 'transparent',
+              },
+            ]}
+          >
+            {isSelected ? (
+              <SymbolView
+                name="checkmark"
+                size={14}
+                weight="bold"
+                tintColor={theme.colors.accent}
+              />
+            ) : null}
+            <Text style={[styles.chipText, { color: theme.colors.text }]}>
+              {t}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function RelapseScreen() {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const { state, loading, logRelapse, pledgeNow, pledgedToday } = useAppState();
-  const [phase, setPhase] = useState<'confirm' | 'compassion'>('confirm');
-  const [note, setNote] = useState('');
+  const [phase, setPhase] = useState<'sheet' | 'day0'>('sheet');
+  const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [confirming, setConfirming] = useState(false);
   const [loggedDays, setLoggedDays] = useState(0);
   const [longestAfter, setLongestAfter] = useState(0);
@@ -78,15 +144,22 @@ export default function RelapseScreen() {
   // eslint-disable-next-line react-hooks/purity
   const pledged = pledgedToday(Date.now());
 
-  const handleConfirm = async () => {
+  const toggleTrigger = (t: Trigger) => {
+    setTriggers((prev) =>
+      prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]
+    );
+  };
+
+  const handleBeginAgain = async () => {
     if (confirming) return;
     setConfirming(true);
     try {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const entry = await logRelapse(note);
+      const note = triggers.join(', ');
+      const entry = await logRelapse(note.length > 0 ? note : undefined);
       setLoggedDays(entry.daysCleanBefore);
       setLongestAfter(Math.max(quit.longestStreakDays, entry.daysCleanBefore));
-      setPhase('compassion');
+      setPhase('day0');
     } finally {
       setConfirming(false);
     }
@@ -99,7 +172,9 @@ export default function RelapseScreen() {
       if (!pledged) {
         const counted = await pledgeNow();
         if (counted) {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success
+          );
         }
       }
       router.back();
@@ -109,136 +184,150 @@ export default function RelapseScreen() {
   };
 
   return (
-    <Screen>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.fill}
-      >
-        <View style={styles.wrap}>
-          {phase === 'confirm' ? (
-            <>
-              <View
-                style={[
-                  styles.panel,
-                  { backgroundColor: theme.colors.surface },
-                ]}
-              >
-                <Text style={[styles.title, { color: theme.colors.text }]}>
-                  Log a slip?
-                </Text>
-                <Text style={[styles.sub, { color: theme.colors.text }]}>
-                  {daysLine(days)}
-                </Text>
-                <TextField
-                  label="What triggered it? (optional)"
-                  value={note}
-                  onChangeText={setNote}
-                  placeholder="Noticing the pattern helps future you. No judgment."
-                  multiline
-                  maxLength={280}
-                  inputStyle={styles.noteInput}
-                  style={styles.noteField}
+    <Screen edges={['top', 'left', 'right', 'bottom']}>
+      <View style={styles.backdrop}>
+        <View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: theme.colors.background,
+              borderColor: theme.colors.hairline,
+              paddingBottom: insets.bottom + spacing.lg,
+            },
+          ]}
+        >
+          <View
+            style={styles.grabberZone}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <View
+              style={[
+                styles.grabber,
+                { backgroundColor: theme.colors.metadata },
+              ]}
+            />
+          </View>
+          {phase === 'sheet' ? (
+            <View style={styles.content}>
+              <Text style={[styles.title, { color: theme.colors.text }]}>
+                This doesn’t erase your progress.
+              </Text>
+              <Text style={[styles.body, { color: theme.colors.text }]}>
+                {daysLine(days)}
+              </Text>
+              <Text style={[styles.label, { color: theme.colors.metadata }]}>
+                What happened? (optional — skip if you’d rather not)
+              </Text>
+              <TriggerChips selected={triggers} onToggle={toggleTrigger} />
+              <View style={styles.cta}>
+                <InvertedButton
+                  title={confirming ? 'Logging…' : 'Begin again'}
+                  onPress={handleBeginAgain}
+                  loading={confirming}
                 />
-                <Text
-                  style={[styles.privacy, { color: theme.colors.metadata }]}
-                >
-                  Only you ever see this.
-                </Text>
+                <GhostButton title="Not yet" onPress={() => router.back()} />
               </View>
-              <GlassButton
-                title={confirming ? 'Logging…' : 'Log it — gently'}
-                onPress={handleConfirm}
-                disabled={confirming}
-              />
-              <GlassButton
-                title="Not yet"
-                onPress={() => router.back()}
-                variant="secondary"
-              />
-            </>
+            </View>
           ) : (
-            <>
+            <View style={styles.content}>
+              <Text style={[styles.title, { color: theme.colors.text }]}>
+                Day 1 starts now.
+              </Text>
+              <Text style={[styles.body, { color: theme.colors.text }]}>
+                {loggedDays > 0
+                  ? `${loggedDays} days proved you can do this.`
+                  : 'Every beginning counts. This is yours.'}
+              </Text>
               <View
                 style={[
-                  styles.panel,
-                  { backgroundColor: theme.colors.surface },
+                  styles.longestRow,
+                  { borderTopColor: theme.colors.hairline },
                 ]}
               >
-                <Text style={[styles.title, { color: theme.colors.text }]}>
-                  Day 1 again — and that’s okay.
-                </Text>
-                <Text style={[styles.sub, { color: theme.colors.text }]}>
-                  {loggedDays > 0
-                    ? `Those ${loggedDays} day${loggedDays === 1 ? '' : 's'} happened. Nobody can take them from you.`
-                    : 'Every streak starts with a single day. This is yours.'}
-                </Text>
-                <View
-                  style={[
-                    styles.longestRow,
-                    { borderTopColor: theme.colors.hairline },
-                  ]}
+                <Text
+                  style={[styles.label, { color: theme.colors.metadata }]}
                 >
-                  <Text
-                    style={[
-                      styles.longestLabel,
-                      { color: theme.colors.metadata },
-                    ]}
-                  >
-                    LONGEST STREAK
-                  </Text>
-                  <Text
-                    style={[
-                      styles.longestValue,
-                      { color: theme.colors.text },
-                    ]}
-                  >
-                    {longestAfter} day{longestAfter === 1 ? '' : 's'} — you’ll beat it.
-                  </Text>
-                </View>
+                  LONGEST STREAK
+                </Text>
+                <Text
+                  style={[styles.longestValue, { color: theme.colors.text }]}
+                >
+                  {longestAfter} day{longestAfter === 1 ? '' : 's'} — you’ll
+                  beat it.
+                </Text>
               </View>
-              <GlassButton
-                title={pledging ? 'Pledging…' : pledged ? 'Back home' : 'Pledge today'}
-                onPress={handlePledgeAndHome}
-                disabled={pledging}
-              />
-            </>
+              <View style={styles.cta}>
+                <InvertedButton
+                  title={
+                    pledging ? 'Pledging…' : pledged ? 'Back home' : 'Pledge today'
+                  }
+                  onPress={handlePledgeAndHome}
+                  loading={pledging}
+                />
+              </View>
+            </View>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  wrap: {
+  backdrop: {
     flex: 1,
-    padding: spacing.lg,
-    justifyContent: 'center',
-    gap: spacing.md,
+    justifyContent: 'flex-end',
   },
   panel: {
-    borderRadius: radii.lg,
-    padding: spacing.xl,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
   },
-  title: { ...type.title1, marginBottom: spacing.sm },
-  sub: { ...type.body, lineHeight: 24 },
-  noteField: { marginTop: spacing.lg },
-  noteInput: {
-    minHeight: 96,
-    textAlignVertical: 'top',
-    paddingTop: spacing.sm,
+  grabberZone: {
+    paddingVertical: 12,
+    alignItems: 'center',
   },
-  privacy: {
-    ...type.caption,
+  grabber: {
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  content: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  title: { ...typeScale.title3, textAlign: 'center' },
+  body: { ...typeScale.body, textAlign: 'center' },
+  label: { ...typeScale.footnote, textAlign: 'center' },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  chip: {
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  chipText: { ...typeScale.subhead },
+  cta: {
     marginTop: spacing.sm,
+    gap: spacing.sm,
   },
   longestRow: {
-    marginTop: spacing.lg,
-    paddingTop: spacing.lg,
     borderTopWidth: 1,
+    paddingTop: spacing.md,
+    gap: spacing.xs,
   },
-  longestLabel: { ...type.caption, letterSpacing: 1.5 },
-  longestValue: { ...type.headline, marginTop: spacing.xs },
+  longestValue: { ...typeScale.headline, textAlign: 'center' },
 });
