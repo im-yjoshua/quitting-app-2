@@ -68,9 +68,9 @@ const orb = {
 /**
  * Orb theme gradient stops — the product's single intentional color object
  * (the stated monochrome deviation). Same three themes as before (dawn
- * free; ember + tide premium), elevated by the 5-layer rendering in
- * components/Orb.tsx. Exported for components/Orb.tsx (kept out of
- * ThemeColors so the monochrome theme objects stay pure).
+ * free; ember + tide premium), elevated by the 5-layer rendering.
+ * Exported for the legacy components/Orb.tsx and the v3 components/orb/Orb
+ * (which renders the violet `dawn` story — the Orb's v3 color).
  */
 export const orbThemes = {
   dawn: {
@@ -194,6 +194,12 @@ export const motion = {
   press: { damping: 16, stiffness: 380 },
   /** Press scale target. */
   pressScale: 0.97,
+  /**
+   * Orb v2 breathing — the one sanctioned ambient motion (plan §5):
+   * 6s loop, scale 1↔peakScale, plus a shimmerDelta opacity shimmer on the
+   * inner glow. Fully static under Reduce Motion.
+   */
+  breathe: { periodMs: 6000, peakScale: 1.04, shimmerDelta: 0.12 },
 } as const;
 
 // ---------------------------------------------------------------------------
