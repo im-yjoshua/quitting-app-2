@@ -1,24 +1,25 @@
 /**
- * Sovereign v2 design tokens — monochrome system (redesign "Kill the cheap").
+ * Sovereign v3 design tokens — "Obsidian" (the ONLY module holding
+ * color/type/spacing/radii/motion values).
  *
  * The three laws:
  *  1. Monochrome — canvas is pure #000000 (dark) / #FFFFFF (light). Exactly
  *     one grey (#1C1C1E / #F2F2F7), and ONLY for grouped list cards + text
  *     inputs. No aurora washes, no tinted backgrounds.
  *  2. Apple's dimensions — SF system type scale with 17pt body, 4/8pt grid,
- *     44pt touch targets, standard radii, springs.
+ *     44pt touch targets, standard radii, springs (damping 18/stiffness 200).
  *  3. System components — native tabs, system sheets, native switches.
  *
  * The one stated deviation: the Orb keeps its color (product soul — the
  * single intentional color object on a monochrome canvas). Orb tokens live
  * here and are the ONLY non-monochrome, non-semantic colors allowed.
  *
- * Accent (sovereign violet #7C6CF0, clears 3:1 on both canvases) is confined
- * to: active tab indicator, links, toggle on-states, selected states. NEVER on
- * full-width primary buttons — those are inverted fills.
+ * Accent (violet #BF5AF2) is confined to: the Orb, the Urge FAB, the active
+ * tab indicator, links, toggle on-states, selected states. NEVER on
+ * full-width primary buttons — those are inverted monochrome fills.
  *
- * RULE: no hex literal inside any component — every color comes from this
- * module (via `useTheme()` for appearance-aware code).
+ * RULE: a hex literal inside any component is a bug — every color comes
+ * from this module (via `useTheme()` for appearance-aware code).
  */
 
 export type ColorScheme = 'light' | 'dark';
@@ -93,8 +94,8 @@ export const orbThemes = {
 } as const;
 
 const shared = {
-  accent: '#7C6CF0', // sovereign violet
-  accentSoft: 'rgba(124, 108, 240, 0.16)',
+  accent: '#BF5AF2', // v3 violet — Orb, Urge FAB, active tab, links, toggles, selection
+  accentSoft: 'rgba(191, 90, 242, 0.16)',
   success: '#30D158', // iOS system green
   warning: '#FF9F0A', // iOS system orange
   danger: '#FF453A', // iOS system red
@@ -209,8 +210,8 @@ export const colors = {
   text: '#FFFFFF',
   textSecondary: 'rgba(235,235,245,0.60)',
   textTertiary: 'rgba(235,235,245,0.60)',
-  accent: '#7C6CF0',
-  accentSoft: 'rgba(124, 108, 240, 0.16)',
+  accent: '#BF5AF2',
+  accentSoft: 'rgba(191, 90, 242, 0.16)',
   success: '#30D158',
   warning: '#FF9F0A',
   danger: '#FF453A',
