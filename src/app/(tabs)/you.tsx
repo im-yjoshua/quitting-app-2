@@ -1,32 +1,46 @@
 /**
- * You tab (spec §2.8): streak summary, Data & Backup, Notifications,
- * App Commitments, Sovereign premium row, privacy/support, erase-all-data.
+ * You tab (Phase 7 — v3 reskin, plan §3.7).
  *
- * Everything here is honest: backups are checksum-verified, commitments
- * never claim OS powers, and destructive actions are double-confirmed.
+ * Inset grouped list — the iOS Settings pattern: section headers in
+ * footnote caps, rows on the one grey surface, hairline separators,
+ * disclosure chevrons, destructive action in red, one-sentence footers
+ * explaining what each toggle does.
  *
- * Monochrome reskin: iOS Settings-style grouped inset list — section
- * headers in footnote caps, rows on the ONE grey surface, hairline
- * separators, disclosure chevrons, destructive action in red.
+ * Sections: Quit (summary + pledge time → TimePickerSheet), Notifications
+ * (two toggles, footers), Appearance (Light/Dark/System segmented — same
+ * persistence contract), Data (backup & restore — same contracts),
+ * Orb theme (same premium-gating contract), Commitments (same contract),
+ * Premium (upsell row with Orb mini-glow for free users), About
+ * (Privacy, Terms, Support, version), Danger zone.
+ *
+ * Presentation-only: every handler below is the v2 logic, untouched —
+ * services/*, state/AppStateContext, and constants are consumed read-only.
  */
+import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
-import { GlassButton } from '../../../components/glass/GlassButton';
-import { GlassToggle } from '../../../components/glass/GlassToggle';
-import { Screen } from '../../../components/glass/Screen';
-import { TextField } from '../../../components/glass/TextField';
+import { OrbGlow } from '../../../components/orb/OrbGlow';
 import { TimePickerSheet } from '../../../components/TimePickerSheet';
+import {
+  GhostButton,
+  Screen,
+  SectionHeader,
+  SegmentedControl,
+} from '../../../components/ui';
 import { PRIVACY_POLICY_URL, SUPPORT_EMAIL } from '../../../constants';
 import {
   eraseAllAppData,
@@ -59,16 +73,13 @@ import { restorePurchasesWithBiometrics } from '../../../services/purchases';
 import { cleanDaysFloor } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
 import { usePremium } from '../../../hooks/usePremium';
-import { radii, spacing, type } from '../../../theme/tokens';
+import { orbThemes, radii, spacing, type as typeScale } from '../../../theme/tokens';
 import { useTheme } from '../../../theme/useTheme';
 import type { Theme } from '../../../theme/tokens';
 import type { AppearanceSetting, OrbTheme } from '../../../types/app';
 
-const ORB_THEMES: { id: OrbTheme; label: string; locked: boolean; swatch: string }[] = [
-  { id: 'dawn', label: 'Dawn', locked: false, swatch: '#7C6CF0' },
-  { id: 'ember', label: 'Ember', locked: true, swatch: '#E8786A' },
-  { id: 'tide', label: 'Tide', locked: true, swatch: '#35B3A3' },
-];
+const APPLE_STANDARD_EULA =
+  'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
 
 const APPEARANCES: { id: AppearanceSetting; label: string }[] = [
   { id: 'light', label: 'Light' },
@@ -76,26 +87,11 @@ const APPEARANCES: { id: AppearanceSetting; label: string }[] = [
   { id: 'system', label: 'System' },
 ];
 
-function Section({
-  title,
-  theme,
-  children,
-}: {
-  title: string;
-  theme: Theme;
-  children: React.ReactNode;
-}) {
-  return (
-    <View style={styles.section}>
-      <Text style={[styles.sectionTitle, { color: theme.colors.metadata }]}>
-        {title.toUpperCase()}
-      </Text>
-      <View style={[styles.group, { backgroundColor: theme.colors.surface }]}>
-        {children}
-      </View>
-    </View>
-  );
-}
+const ORB_THEMES: { id: OrbTheme; label: string; locked: boolean }[] = [
+  { id: 'dawn', label: 'Dawn', locked: false },
+  { id: 'ember', label: 'Ember', locked: true },
+  { id: 'tide', label: 'Tide', locked: true },
+];
 
 /** A tappable row: label left, optional value/chevron right. */
 function Row({
@@ -106,6 +102,7 @@ function Row({
   chevron,
   last,
   accessibilityLabel,
+  labelColor,
 }: {
   theme: Theme;
   label: string;
@@ -114,17 +111,24 @@ function Row({
   chevron?: boolean;
   last?: boolean;
   accessibilityLabel?: string;
+  labelColor?: string;
 }) {
   const c = theme.colors;
   const body = (
     <>
-      <Text style={[styles.rowLabel, { color: c.text }]}>{label}</Text>
+      <Text style={[styles.rowLabel, { color: labelColor ?? c.text }]}>
+        {label}
+      </Text>
       <View style={styles.rowRight}>
         {value ? (
           <Text style={[styles.rowValue, { color: c.metadata }]}>{value}</Text>
         ) : null}
         {chevron ? (
-          <Text style={[styles.chevron, { color: c.metadata }]}>›</Text>
+          <SymbolView
+            name="chevron.right"
+            tintColor={c.metadata}
+            style={styles.chevronIcon}
+          />
         ) : null}
       </View>
     </>
@@ -143,6 +147,54 @@ function Row({
     >
       {body}
     </Pressable>
+  );
+}
+
+/** A label + Switch row. The on-state is the accent (per the monochrome law). */
+function ToggleRow({
+  theme,
+  label,
+  value,
+  onValueChange,
+  last,
+}: {
+  theme: Theme;
+  label: string;
+  value: boolean;
+  onValueChange: (next: boolean) => void;
+  last?: boolean;
+}) {
+  const c = theme.colors;
+  return (
+    <View
+      style={[
+        styles.row,
+        !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
+      ]}
+    >
+      <Text style={[styles.rowLabel, { color: c.text }]}>{label}</Text>
+      <Switch
+        accessibilityRole="switch"
+        accessibilityLabel={label}
+        accessibilityState={{ checked: value }}
+        value={value}
+        onValueChange={(next) => {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          onValueChange(next);
+        }}
+        trackColor={{ false: c.hairline, true: c.accent }}
+        thumbColor={c.onAccent}
+        ios_backgroundColor={c.surface}
+      />
+    </View>
+  );
+}
+
+function Footer({ theme, children }: { theme: Theme; children: string }) {
+  return (
+    <Text style={[styles.footer, { color: theme.colors.metadata }]}>
+      {children}
+    </Text>
   );
 }
 
@@ -174,9 +226,7 @@ export default function YouScreen() {
     return (
       <Screen>
         <View style={styles.loading}>
-          <Text style={[styles.loadingText, { color: c.metadata }]}>
-            Loading…
-          </Text>
+          <ActivityIndicator color={c.accent} />
         </View>
       </Screen>
     );
@@ -185,6 +235,7 @@ export default function YouScreen() {
   const quit = state.quit;
   const cleanDays = cleanDaysFloor(quit.startDate, nowSnapshot);
   const settings = state.settings;
+  const version = Constants.expoConfig?.version ?? '1.0.0';
 
   // ---- Backup ----
   const handleCreateBackup = async () => {
@@ -285,7 +336,8 @@ export default function YouScreen() {
     }
   };
 
-  const handleMilestoneAlerts = async (next: boolean) => {    await updateSettings({ milestoneAlerts: next });
+  const handleMilestoneAlerts = async (next: boolean) => {
+    await updateSettings({ milestoneAlerts: next });
     if (!next) {
       try {
         await cancelScheduledNotification(MILESTONE_EVE_IDENTIFIER);
@@ -378,378 +430,366 @@ export default function YouScreen() {
     void Linking.openURL(url);
   };
 
+  const appearanceIndex = Math.max(
+    0,
+    APPEARANCES.findIndex((a) => a.id === settings.appearance)
+  );
+
   return (
-    <Screen>
-      <ScrollView
-        style={styles.fill}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={[styles.title, { color: c.text }]}>You</Text>
+    <Screen scrollable scrollContentStyle={styles.content}>
+      <Text style={[styles.title, { color: c.text }]}>You</Text>
 
-        {/* Streak summary */}
-        <Section title="Streak summary" theme={theme}>
-          <View style={styles.statGrid}>
-            {[
-              { value: String(cleanDays), label: 'current' },
-              { value: String(quit.longestStreakDays), label: 'longest' },
-              { value: String(quit.totalRelapses), label: 'slips' },
-              { value: String(state.pledge.pledgeStreak), label: 'pledge streak' },
-            ].map((s) => (
-              <View key={s.label} style={styles.stat}>
-                <Text
-                  style={[styles.statValue, { color: c.text }, styles.tabular]}
-                >
-                  {s.value}
-                </Text>
-                <Text style={[styles.statLabel, { color: c.metadata }]}>
-                  {s.label}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </Section>
+      {/* Quit summary + pledge time */}
+      <SectionHeader title="Quit" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <Row theme={theme} label="Days clean" value={String(cleanDays)} />
+        <Row
+          theme={theme}
+          label="Pledge streak"
+          value={`${state.pledge.pledgeStreak} days`}
+        />
+        <Row
+          theme={theme}
+          label="Pledge time"
+          value={formatPledgeTime12h(quit.pledgeTime)}
+          chevron
+          last
+          accessibilityLabel={`Pledge time, currently ${formatPledgeTime12h(quit.pledgeTime)}. Tap to change.`}
+          onPress={() => setTimeSheetOpen(true)}
+        />
+      </View>
 
-        {/* Data & Backup */}
-        <Section title="Data & backup" theme={theme}>
-          <View style={styles.padded}>
-            <View style={styles.integrityRow}>
-              <Text style={[styles.rowLabel, { color: c.text }]}>
-                Storage integrity
-              </Text>
-              <Text
-                style={[
-                  styles.rowValue,
-                  {
-                    color:
-                      integrity === 'verified' ? c.success : c.metadata,
-                  },
-                ]}
-              >
-                {integrity === null
-                  ? 'checking…'
-                  : integrity === 'verified'
-                    ? '✓ Verified'
-                    : 'Recovered from safe defaults'}
-              </Text>
-            </View>
-            <Text style={[styles.footnote, { color: c.metadata }]}>
-              Everything stays on this device. Backups are checksummed —
-              damaged files are rejected, never half-applied.
-            </Text>
-            <View style={styles.btnRow}>
-              <GlassButton
-                title={busy === 'backup' ? 'Working…' : 'Create backup'}
-                onPress={handleCreateBackup}
-                disabled={busy !== null}
-              />
-              <GlassButton
-                title={busy === 'restore' ? 'Working…' : 'Restore backup'}
-                onPress={handleRestoreBackup}
-                variant="secondary"
-                disabled={busy !== null}
-              />
-            </View>
-          </View>
-        </Section>
+      {/* Notifications — one sentence of footer per toggle */}
+      <SectionHeader title="Notifications" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <ToggleRow
+          theme={theme}
+          label="Morning pledge reminder"
+          value={settings.pledgeReminder}
+          onValueChange={handlePledgeReminder}
+          last
+        />
+      </View>
+      <Footer theme={theme}>
+        A gentle nudge at your pledge time, so each day starts with the pledge.
+      </Footer>
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <ToggleRow
+          theme={theme}
+          label="Milestone alerts"
+          value={settings.milestoneAlerts}
+          onValueChange={handleMilestoneAlerts}
+          last
+        />
+      </View>
+      <Footer theme={theme}>
+        A heads-up the evening before a milestone, so you meet it head-on.
+      </Footer>
 
-        {/* Notifications */}
-        <Section title="Notifications" theme={theme}>
-          <View style={styles.togglePad}>
-            <GlassToggle
-              label="Morning pledge reminder"
-              hint="A gentle nudge to start the day"
-              value={settings.pledgeReminder}
-              onValueChange={handlePledgeReminder}
-            />
-          </View>
-          <View
-            style={[styles.insetDivider, { backgroundColor: c.hairline }]}
-          />
-          <Row
-            theme={theme}
-            label="Pledge time"
-            value={formatPledgeTime12h(quit.pledgeTime)}
-            chevron
-            last
-            accessibilityLabel={`Pledge time, currently ${formatPledgeTime12h(quit.pledgeTime)}. Tap to change.`}
-            onPress={() => setTimeSheetOpen(true)}
-          />
-          <View
-            style={[styles.insetDivider, { backgroundColor: c.hairline }]}
-          />
-          <View style={styles.togglePad}>
-            <GlassToggle
-              label="Milestone alerts"
-              hint="A heads-up the evening before a milestone"
-              value={settings.milestoneAlerts}
-              onValueChange={handleMilestoneAlerts}
-            />
-          </View>
-        </Section>
+      {/* Appearance — Light / Dark / System, same persistence contract */}
+      <SectionHeader title="Appearance" />
+      <SegmentedControl
+        segments={APPEARANCES.map((a) => a.label)}
+        selectedIndex={appearanceIndex}
+        onChange={(index) => {
+          void updateSettings({ appearance: APPEARANCES[index].id });
+        }}
+        accessibilityLabel="Appearance"
+      />
 
-        {/* Appearance — Light / Dark / System */}
-        <Section title="Appearance" theme={theme}>
-          {APPEARANCES.map((a, i) => {
-            const selected = settings.appearance === a.id;
+      {/* Data & Backup */}
+      <SectionHeader title="Data" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <Row
+          theme={theme}
+          label="Storage integrity"
+          last
+          value={
+            integrity === null
+              ? 'Checking…'
+              : integrity === 'verified'
+                ? '✓ Verified'
+                : 'Recovered from safe defaults'
+          }
+        />
+      </View>
+      <Footer theme={theme}>
+        Everything stays on this device. Backups are checksummed — damaged
+        files are rejected, never half-applied.
+      </Footer>
+      <View style={styles.btnRow}>
+        <GhostButton
+          title="Create backup"
+          onPress={handleCreateBackup}
+          loading={busy === 'backup'}
+          disabled={busy !== null}
+          style={styles.btnHalf}
+        />
+        <GhostButton
+          title="Restore backup"
+          onPress={handleRestoreBackup}
+          loading={busy === 'restore'}
+          disabled={busy !== null}
+          style={styles.btnHalf}
+        />
+      </View>
+
+      {/* Orb theme — Ember & Tide are Sovereign-member only (same contract) */}
+      <SectionHeader title="Orb theme" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <View style={styles.themeRow}>
+          {ORB_THEMES.map((t) => {
+            const locked = t.locked && !isPremium;
+            const selected = settings.orbTheme === t.id;
             return (
               <Pressable
-                key={a.id}
+                key={t.id}
                 accessibilityRole="radio"
                 accessibilityState={{ checked: selected }}
-                accessibilityLabel={`${a.label} appearance`}
+                accessibilityLabel={
+                  locked
+                    ? `${t.label} theme (Sovereign members only)`
+                    : `${t.label} theme`
+                }
                 onPress={() => {
-                  void Haptics.impactAsync(
-                    Haptics.ImpactFeedbackStyle.Light
-                  );
-                  void updateSettings({ appearance: a.id });
+                  if (locked) {
+                    router.push('/paywall');
+                  } else {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    void updateSettings({ orbTheme: t.id });
+                  }
                 }}
                 style={({ pressed }) => [
-                  styles.row,
-                  i < APPEARANCES.length - 1 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: c.hairline,
+                  styles.themeSwatch,
+                  {
+                    borderColor: selected ? c.accent : 'transparent',
+                    backgroundColor: selected ? c.accentSoft : 'transparent',
                   },
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={[styles.rowLabel, { color: c.text }]}>
-                  {a.label}
-                </Text>
-                {selected ? (
-                  <Text style={[styles.check, { color: c.accent }]}>✓</Text>
-                ) : null}
+                <View
+                  style={[
+                    styles.themeDot,
+                    { backgroundColor: orbThemes[t.id].glow },
+                  ]}
+                />
+                <View style={styles.themeLabelRow}>
+                  <Text style={[styles.themeLabel, { color: c.text }]}>
+                    {t.label}
+                  </Text>
+                  {locked ? (
+                    <SymbolView
+                      name="lock.fill"
+                      tintColor={c.metadata}
+                      style={styles.lockIcon}
+                    />
+                  ) : null}
+                </View>
               </Pressable>
             );
           })}
-        </Section>
+        </View>
+      </View>
+      {!isPremium && (
+        <Footer theme={theme}>Ember and Tide unlock with Sovereign.</Footer>
+      )}
 
-        {/* Orb theme — Ember & Tide are Sovereign-member only */}
-        <Section title="Orb theme" theme={theme}>
-          <View style={styles.padded}>
-            <View style={styles.themeRow}>
-              {ORB_THEMES.map((t) => {
-                const locked = t.locked && !isPremium;
-                const selected = settings.orbTheme === t.id;
-                return (
-                  <Pressable
-                    key={t.id}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: selected }}
-                    accessibilityLabel={
-                      locked ? `${t.label} theme (Sovereign members only)` : `${t.label} theme`
-                    }
-                    onPress={() => {
-                      if (locked) {
-                        router.push('/paywall');
-                      } else {
-                        void Haptics.impactAsync(
-                          Haptics.ImpactFeedbackStyle.Light
-                        );
-                        void updateSettings({ orbTheme: t.id });
-                      }
-                    }}
-                    style={({ pressed }) => [
-                      styles.themeSwatch,
-                      {
-                        borderColor: selected
-                          ? c.accent
-                          : 'transparent',
-                        backgroundColor: selected
-                          ? c.accentSoft
-                          : 'transparent',
-                      },
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <View
-                      style={[styles.themeDot, { backgroundColor: t.swatch }]}
-                    />
-                    <Text style={[styles.themeLabel, { color: c.text }]}>
-                      {t.label}
-                      {locked ? ' 🔒' : ''}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {!isPremium && (
-              <Text style={[styles.footnote, { color: c.metadata }]}>
-                Ember and Tide unlock with Sovereign.
-              </Text>
-            )}
-          </View>
-        </Section>
-
-        {/* App Commitments */}
-        <Section title="App commitments" theme={theme}>
-          <View style={styles.padded}>
-            <Text style={[styles.body, { color: c.text }]}>
-              Declare the apps you commit to avoid. This is a personal
-              commitment — Sovereign can&apos;t block or limit other apps.
+      {/* App Commitments — same contract, honest copy kept */}
+      <SectionHeader title="Commitments" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <View style={styles.padded}>
+          <Text style={[styles.body, { color: c.text }]}>
+            Declare the apps you commit to avoid. This is a personal
+            commitment — Sovereign can&apos;t block or limit other apps.
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              guideOpen
+                ? 'Hide the honest Screen Time guide'
+                : 'Show the honest Screen Time guide'
+            }
+            onPress={() => setGuideOpen((o) => !o)}
+            style={styles.guideToggle}
+            hitSlop={8}
+          >
+            <Text style={[styles.guideToggleText, { color: c.accent }]}>
+              {guideOpen ? 'Hide' : 'Show'} the honest Screen Time guide
             </Text>
+          </Pressable>
+          {guideOpen && (
+            <Text
+              style={[
+                styles.guide,
+                { color: c.text, backgroundColor: c.background },
+              ]}
+            >
+              If you want enforced limits, iOS Screen Time is the real tool:
+              Settings → Screen Time → App Limits → Add Limit → pick the app
+              → set 1 minute. Sovereign won&apos;t pretend to do this for you
+              — but your commitment list above keeps the promise visible.
+            </Text>
+          )}
+          <View style={styles.addRow}>
+            <TextInput
+              placeholder="App name, e.g. TikTok"
+              placeholderTextColor={c.metadata}
+              value={newApp}
+              onChangeText={setNewApp}
+              maxLength={40}
+              returnKeyType="done"
+              onSubmitEditing={handleAddApp}
+              style={[
+                styles.field,
+                { color: c.text, backgroundColor: c.background },
+              ]}
+            />
             <Pressable
               accessibilityRole="button"
-              onPress={() => setGuideOpen((o) => !o)}
-              style={styles.guideToggle}
+              accessibilityLabel="Add app commitment"
+              onPress={handleAddApp}
+              style={({ pressed }) => [
+                styles.addBtn,
+                { backgroundColor: c.inverted },
+                pressed && styles.pressed,
+              ]}
             >
-              <Text style={[styles.guideToggleText, { color: c.accent }]}>
-                {guideOpen ? 'Hide' : 'Show'} the honest Screen Time guide
+              <Text style={[styles.addBtnText, { color: c.background }]}>
+                Add
               </Text>
             </Pressable>
-            {guideOpen && (
-              <Text
-                style={[
-                  styles.guide,
-                  { color: c.text, backgroundColor: c.background },
-                ]}
-              >
-                If you want enforced limits, iOS Screen Time is the real tool:
-                Settings → Screen Time → App Limits → Add Limit → pick the
-                app → set 1 minute. Sovereign won&apos;t pretend to do this
-                for you — but your commitment list above keeps the promise
-                visible.
-              </Text>
-            )}
-            <View style={styles.addRow}>
-              <TextField
-                placeholder="App name, e.g. TikTok"
-                value={newApp}
-                onChangeText={setNewApp}
-                maxLength={40}
-                returnKeyType="done"
-                onSubmitEditing={handleAddApp}
-                style={styles.addField}
-              />
+          </View>
+          {(commitments?.triggerApps ?? []).map((app, i, arr) => (
+            <View
+              key={app}
+              style={[
+                styles.appRow,
+                i < arr.length - 1 && {
+                  borderBottomWidth: 1,
+                  borderBottomColor: c.hairline,
+                },
+              ]}
+            >
+              <Text style={[styles.appName, { color: c.text }]}>{app}</Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Add app commitment"
-                onPress={handleAddApp}
-                style={({ pressed }) => [
-                  styles.addBtn,
-                  { backgroundColor: c.accentSoft },
-                  pressed && styles.pressed,
-                ]}
+                accessibilityLabel={`Remove ${app}`}
+                onPress={() => handleRemoveApp(app)}
+                style={styles.removeBtn}
+                hitSlop={8}
               >
-                <Text style={[styles.addBtnText, { color: c.accent }]}>
-                  Add
+                <Text style={[styles.removeText, { color: c.accent }]}>
+                  Remove
                 </Text>
               </Pressable>
             </View>
-            {(commitments?.triggerApps ?? []).map((app, i, arr) => (
-              <View
-                key={app}
-                style={[
-                  styles.appRow,
-                  i < arr.length - 1 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: c.hairline,
-                  },
-                ]}
-              >
-                <Text style={[styles.appName, { color: c.text }]}>{app}</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${app}`}
-                  onPress={() => handleRemoveApp(app)}
-                  style={styles.removeBtn}
-                >
-                  <Text
-                    style={[styles.removeText, { color: c.metadata }]}
-                  >
-                    Remove
-                  </Text>
-                </Pressable>
-              </View>
-            ))}
-            {(commitments?.triggerApps.length ?? 0) === 0 && (
-              <Text style={[styles.empty, { color: c.metadata }]}>
-                No commitments yet — add the apps that test you most.
-              </Text>
-            )}
-          </View>
-        </Section>
-
-        {/* Premium */}
-        <Section title="Sovereign" theme={theme}>
-          <Row
-            theme={theme}
-            label="Membership"
-            value={isPremium ? '✓ Active' : 'Free'}
-            last={!isPremium}
-          />
-          {!isPremium && (
-            <View style={[styles.padded, styles.plansPad]}>
-              <GlassButton
-                title="See plans"
-                onPress={() => router.push('/paywall')}
-                variant="secondary"
-              />
-            </View>
+          ))}
+          {(commitments?.triggerApps.length ?? 0) === 0 && (
+            <Text style={[styles.empty, { color: c.metadata }]}>
+              No commitments yet — add the apps that test you most.
+            </Text>
           )}
+        </View>
+      </View>
+
+      {/* Premium */}
+      <SectionHeader title="Premium" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        {isPremium ? (
+          <Row theme={theme} label="Membership" value="✓ Active" />
+        ) : (
           <Pressable
             accessibilityRole="button"
-            onPress={handleRestore}
-            disabled={busy !== null}
-            style={({ pressed }) => [
-              styles.row,
-              pressed && styles.pressed,
-            ]}
+            accessibilityLabel="Go Premium — see Sovereign plans"
+            onPress={() => router.push('/paywall')}
+            style={({ pressed }) => [styles.upsell, pressed && styles.pressed]}
           >
-            <Text style={[styles.rowLabel, { color: c.accent }]}>
-              {busy === 'restore-purchases' ? 'Restoring…' : 'Restore purchases'}
+            <OrbGlow size={26} />
+            <Text style={[styles.upsellLabel, { color: c.text }]}>
+              Go Premium
             </Text>
+            <SymbolView
+              name="chevron.right"
+              tintColor={c.metadata}
+              style={styles.chevronIcon}
+            />
           </Pressable>
-        </Section>
+        )}
+        <View style={[styles.divider, { backgroundColor: c.hairline }]} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleRestore}
+          disabled={busy !== null}
+          style={({ pressed }) => [
+            styles.row,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={[styles.rowLabel, { color: c.accent }]}>
+            {busy === 'restore-purchases' ? 'Restoring…' : 'Restore purchases'}
+          </Text>
+        </Pressable>
+      </View>
 
-        {/* Privacy & support */}
-        <Section title="About" theme={theme}>
-          <Row
-            theme={theme}
-            label="Privacy policy"
-            chevron
-            onPress={() =>
-              openLink(
-                PRIVACY_POLICY_URL,
-                'The privacy policy ships with the App Store listing — the full text is already drafted.'
-              )
-            }
-          />
-          <Row
-            theme={theme}
-            label="Contact support"
-            chevron
-            last
-            onPress={() =>
-              openLink(
-                SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}` : '',
-                'The support inbox is set up before launch.'
-              )
-            }
-          />
-        </Section>
+      {/* About */}
+      <SectionHeader title="About" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <Row
+          theme={theme}
+          label="Privacy policy"
+          chevron
+          onPress={() =>
+            openLink(
+              PRIVACY_POLICY_URL,
+              'The privacy policy ships with the App Store listing — the full text is already drafted.'
+            )
+          }
+        />
+        <Row
+          theme={theme}
+          label="Terms of use"
+          chevron
+          onPress={() => void Linking.openURL(APPLE_STANDARD_EULA)}
+        />
+        <Row
+          theme={theme}
+          label="Contact support"
+          chevron
+          onPress={() =>
+            openLink(
+              SUPPORT_EMAIL ? `mailto:${SUPPORT_EMAIL}` : '',
+              'The support inbox is set up before launch.'
+            )
+          }
+        />
+        <Row theme={theme} label="Version" value={version} last />
+      </View>
 
-        {/* Danger zone */}
-        <Section title="Danger zone" theme={theme}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={handleErase}
-            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
-          >
-            <Text style={[styles.rowLabel, { color: c.danger }]}>
-              Erase all my data
-            </Text>
-          </Pressable>
-          <View style={styles.padded}>
-            <Text style={[styles.footnote, { color: c.metadata }]}>
-              Deletes streak, journal, and settings from this device. Your
-              App Store purchase history is untouched.
-            </Text>
-          </View>
-        </Section>
+      {/* Danger zone */}
+      <SectionHeader title="Danger zone" />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Erase all my data"
+          onPress={handleErase}
+          style={({ pressed }) => [
+            styles.row,
+            { borderBottomWidth: 0 },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={[styles.rowLabel, { color: c.danger }]}>
+            Erase all my data
+          </Text>
+        </Pressable>
+      </View>
+      <Footer theme={theme}>
+        Deletes your streak, journal, and settings from this device. Your App
+        Store purchase history is untouched.
+      </Footer>
 
-        <View style={{ height: spacing.xxl }} />
-      </ScrollView>
+      <View style={{ height: spacing.xxl }} />
 
       <TimePickerSheet
         visible={timeSheetOpen}
@@ -762,20 +802,11 @@ export default function YouScreen() {
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { ...type.body },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  title: { ...type.largeTitle, marginBottom: spacing.md },
-  section: { marginBottom: spacing.md },
-  sectionTitle: {
-    ...type.footnote,
-    letterSpacing: 1,
-    marginBottom: spacing.sm,
-    marginLeft: spacing.md,
-  },
+  content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  title: { ...typeScale.largeTitle, marginBottom: spacing.sm },
   group: {
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     overflow: 'hidden',
   },
   row: {
@@ -786,34 +817,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     minHeight: 48,
   },
-  rowLabel: { ...type.body },
-  rowRight: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  rowValue: { ...type.body },
-  chevron: { fontSize: 20, fontWeight: '600' },
+  rowLabel: { ...typeScale.headline },
+  rowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  rowValue: { ...typeScale.body, ...typeScale.tabular },
+  chevronIcon: { width: 12, height: 16 },
   pressed: { opacity: 0.7 },
+  footer: {
+    ...typeScale.footnote,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
   padded: { padding: spacing.md },
-  plansPad: { paddingTop: spacing.sm },
-  integrityRow: {
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  btnHalf: { flex: 1 },
+  upsell: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
   },
-  footnote: { ...type.footnote, marginTop: spacing.xs },
-  btnRow: { gap: spacing.sm, marginTop: spacing.md },
-  togglePad: { paddingHorizontal: spacing.md },
-  insetDivider: {
-    height: 1,
-    marginLeft: spacing.md,
-  },
-  check: { ...type.title3 },
-  themeRow: { flexDirection: 'row', gap: spacing.sm },
+  upsellLabel: { ...typeScale.headline, flex: 1 },
+  divider: { height: 1, marginLeft: spacing.md },
+  themeRow: { flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
   themeSwatch: {
     flex: 1,
     alignItems: 'center',
     gap: spacing.sm,
     paddingVertical: spacing.md,
-    borderRadius: radii.md,
+    borderRadius: radii.sm,
     borderWidth: 1.5,
   },
   themeDot: {
@@ -821,19 +855,36 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
   },
-  themeLabel: { ...type.headline },
-  body: { ...type.body, lineHeight: 24 },
-  guideToggle: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
-  guideToggleText: { ...type.headline },
+  themeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  themeLabel: { ...typeScale.headline },
+  lockIcon: { width: 12, height: 14 },
+  body: { ...typeScale.body, lineHeight: 24 },
+  guideToggle: {
+    paddingVertical: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  guideToggleText: { ...typeScale.headline },
   guide: {
-    ...type.body,
+    ...typeScale.body,
     lineHeight: 22,
     borderRadius: radii.sm,
     padding: spacing.md,
     marginBottom: spacing.sm,
   },
-  addRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm, alignItems: 'center' },
-  addField: { flex: 1 },
+  addRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    alignItems: 'center',
+  },
+  field: {
+    ...typeScale.body,
+    flex: 1,
+    minHeight: 48,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.md,
+  },
   addBtn: {
     minHeight: 48,
     paddingHorizontal: spacing.lg,
@@ -841,7 +892,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addBtnText: { ...type.headline },
+  addBtnText: { ...typeScale.headline },
   appRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -849,16 +900,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     minHeight: 44,
   },
-  appName: { ...type.body },
+  appName: { ...typeScale.body },
   removeBtn: { paddingVertical: spacing.sm, paddingLeft: spacing.md },
-  removeText: { ...type.headline },
-  empty: { ...type.subhead, fontStyle: 'italic', marginTop: spacing.sm },
-  statGrid: {
-    flexDirection: 'row',
-    paddingVertical: spacing.md,
-  },
-  stat: { alignItems: 'center', flex: 1 },
-  statValue: { ...type.title1 },
-  tabular: { ...type.tabular },
-  statLabel: { ...type.caption, marginTop: 2 },
+  removeText: { ...typeScale.headline },
+  empty: { ...typeScale.footnote, fontStyle: 'italic', marginTop: spacing.sm },
 });
