@@ -334,8 +334,11 @@ export default function PaywallScreen() {
             </View>
 
             <Text style={[styles.finePrint, { color: c.metadata }]}>
-              Billed through your App Store account. Cancel anytime in
-              Settings. The core quitting loop — counter, pledge, relapse
+              Payment is charged to your Apple ID at confirmation.
+              Subscriptions auto-renew unless turned off at least 24 hours
+              before the current period ends; your account is charged for
+              renewal within 24 hours of period end. Manage or cancel anytime
+              in Settings. The core quitting loop — counter, pledge, relapse
               flow, urge surf — stays free forever.
             </Text>
           </>
