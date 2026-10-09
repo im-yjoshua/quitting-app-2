@@ -1,141 +1,228 @@
 /**
- * Stats tab (spec §2.5) + Milestones section (spec §2.6).
+ * Stats tab — v3 rebuild (plan §3.5).
  *
- * - Hero numbers: money saved (live-ticking), time reclaimed, current
- *   streak, longest streak.
- * - 12-week clean-day heatmap, monochrome intensity + accent for today.
- * - Health timeline: per-category recovery windows, achieved vs dimmed.
- * - Milestones timeline: achieved glow (+ share), upcoming dimmed.
- * - Subtle premium upsell card at the bottom → /paywall (Day 5).
- *
- * Monochrome reskin: white tabular numerals, grouped surface blocks,
- * full-brightness type. The heatmap is the one place texture lives —
- * monochrome cells, accent only on today.
+ * - Native large title "Stats" that collapses on scroll (the title scrolls
+ *   away under a sticky nav title — the pattern the v2 screen used, kept
+ *   working on iOS and Android).
+ * - Glass segmented control: Week / Month / All time.
+ * - Monochrome bar chart (clean-day share per bucket) + thin craving-
+ *   intensity line, both built from plain Views — no chart library, no
+ *   violet in the charts (the Orb is the single color object).
+ * - Totals row: money saved (live-ticking, per quit config) · time
+ *   reclaimed — same data source the v2 screen used.
+ * - Vertical milestones timeline, share button per achieved milestone →
+ *   the existing ShareCardSheet contract.
+ * - Staggered 60ms fade reveals (plan §12 motion discipline); FadeIn is
+ *   opacity-only so it stays Reduce-Motion-safe.
  */
 import { router } from 'expo-router';
+import { SymbolView } from 'expo-symbols';
 import React, { useEffect, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Extrapolate,
+  FadeIn,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
-import { Skeleton } from '../../../components/Skeleton';
-import { GlassButton } from '../../../components/glass/GlassButton';
-import { Screen } from '../../../components/glass/Screen';
+import { Screen } from '../../../components/ui/Screen';
+import { SectionHeader } from '../../../components/ui/SectionHeader';
+import { SegmentedControl } from '../../../components/ui/SegmentedControl';
+import { Skeleton } from '../../../components/ui/Skeleton';
+import { buildStatsChart, type StatsBucket, type StatsRange } from '../../lib/chartData';
 import { MS_PER_DAY } from '../../../services/chronometerEngine';
+import { MILESTONES } from '../../../services/milestones';
 import {
-  buildCleanHeatmap,
   formatMoney,
   formatTimeReclaimed,
   timeReclaimed,
-  type HeatDay,
 } from '../../../services/savings';
-import { healthTimelineFor } from '../../../services/healthTimeline';
-import { MILESTONES } from '../../../services/milestones';
 import { useAppState } from '../../../state/AppStateContext';
 import { usePremium } from '../../../hooks/usePremium';
-import { radii, spacing, type } from '../../../theme/tokens';
+import { radii, spacing, type as typeScale } from '../../../theme/tokens';
 import { useTheme } from '../../../theme/useTheme';
 import type { Theme } from '../../../theme/tokens';
 
-const HEATMAP_COLS = 12;
-const CELL_GAP = 3;
+const SEGMENTS = ['Week', 'Month', 'All time'] as const;
+const RANGES: StatsRange[] = ['week', 'month', 'all'];
+const CHART_HEIGHT = 168;
+const LINE_HEIGHT = 132;
+const STAGGER_MS = 60;
 
-function todayKeyLocal(nowMs: number): string {
-  const d = new Date(nowMs);
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-function Heatmap({
-  days,
-  width,
-  theme,
-  today,
-}: {
-  days: HeatDay[];
-  width: number;
-  theme: Theme;
-  today: string;
-}) {
-  const cell = (width - CELL_GAP * (HEATMAP_COLS - 1)) / HEATMAP_COLS;
-  // 12 week-columns × 7 day-rows (GitHub style).
-  const columns: HeatDay[][] = Array.from({ length: HEATMAP_COLS }, () => []);
-  days.forEach((d, i) => {
-    columns[Math.floor(i / 7)].push(d);
-  });
+function Bars({ buckets, theme }: { buckets: StatsBucket[]; theme: Theme }) {
   const c = theme.colors;
   return (
-    <View style={styles.heatRow}>
-      {columns.map((col, ci) => (
-        <View key={ci} style={[styles.heatCol, { gap: CELL_GAP }]}>
-          {col.map((d) => {
-            const isToday = d.key === today;
-            return (
+    <View style={[styles.bars, { height: CHART_HEIGHT }]}>
+      {buckets.map((b, i) => (
+        <Animated.View
+          key={b.key}
+          entering={FadeIn.delay(i * STAGGER_MS)}
+          style={styles.barCol}
+        >
+          <View style={styles.barTrack}>
+            {b.cleanRatio === null || b.cleanRatio <= 0 ? (
+              // Stub so empty buckets still read as "no clean days".
               <View
-                key={d.key}
+                style={[styles.barStub, { backgroundColor: c.hairline }]}
+              />
+            ) : (
+              <View
                 style={[
-                  styles.heatCell,
+                  styles.bar,
                   {
-                    width: cell,
-                    height: cell,
-                    borderRadius: Math.max(2, cell / 4),
-                    backgroundColor:
-                      d.status === 'clean'
-                        ? isToday
-                          ? c.accent
-                          : c.text
-                        : d.status === 'slip'
-                          ? c.hairline
-                          : 'transparent',
-                    borderWidth: d.status === 'pending' || isToday ? 1 : 0,
-                    borderColor: isToday ? c.accent : c.hairline,
-                    opacity: d.status === 'clean' && !isToday ? 0.85 : 1,
+                    height: `${Math.max(8, b.cleanRatio * 100)}%` as `${number}%`,
+                    backgroundColor: c.text,
                   },
                 ]}
               />
-            );
-          })}
-        </View>
+            )}
+          </View>
+          <Text style={[styles.barLabel, { color: c.metadata }]}>
+            {b.label}
+          </Text>
+        </Animated.View>
       ))}
+    </View>
+  );
+}
+
+/** Thin monochrome craving line from plain Views — no fill, no gradient. */
+function CravingLine({
+  buckets,
+  width,
+  theme,
+}: {
+  buckets: StatsBucket[];
+  width: number;
+  theme: Theme;
+}) {
+  const c = theme.colors;
+  const n = buckets.length;
+  const hasData = buckets.some((b) => b.craving !== null);
+  const pad = 12;
+  const span = Math.max(1, n - 1);
+  const point = (i: number): { x: number; y: number } | null => {
+    const v = buckets[i].craving;
+    if (v === null || v === undefined) return null;
+    const t = Math.min(5, Math.max(1, v));
+    return {
+      x: pad + (i / span) * (width - pad * 2),
+      // 1 → bottom, 5 → top.
+      y: LINE_HEIGHT - pad - ((t - 1) / 4) * (LINE_HEIGHT - pad * 2),
+    };
+  };
+  interface LineSegment {
+    key: string;
+    left: number;
+    top: number;
+    w: number;
+    rot: number;
+  }
+  const segments: LineSegment[] = [];
+  for (let i = 0; i < n - 1; i++) {
+    const a = point(i);
+    const b = point(i + 1);
+    if (!a || !b) continue; // gap in the data stays a gap
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const w = Math.hypot(dx, dy);
+    segments.push({
+      key: `${i}`,
+      // Center the segment on the midpoint so the rotate lands its
+      // endpoints exactly on the two points.
+      left: (a.x + b.x) / 2 - w / 2,
+      top: (a.y + b.y) / 2 - 1, // minus half the 2pt segment height
+      w,
+      rot: Math.atan2(dy, dx),
+    });
+  }
+  return (
+    <View style={{ width, height: LINE_HEIGHT }}>
+      {/* Baseline */}
+      <View
+        style={[
+          styles.lineBase,
+          { top: LINE_HEIGHT - pad, backgroundColor: c.hairline },
+        ]}
+      />
+      {hasData ? (
+        <>
+          {segments.map((s) => (
+            <View
+              key={s.key}
+              style={[
+                styles.lineSeg,
+                {
+                  left: s.left,
+                  top: s.top,
+                  width: s.w,
+                  backgroundColor: c.text,
+                  transform: [{ rotate: `${s.rot}rad` }],
+                },
+              ]}
+            />
+          ))}
+          {buckets.map((b, i) => {
+            const p = point(i);
+            return p ? (
+              <View
+                key={b.key}
+                style={[
+                  styles.lineDot,
+                  {
+                    left: p.x - 3,
+                    top: p.y - 3,
+                    backgroundColor: c.text,
+                  },
+                ]}
+              />
+            ) : null;
+          })}
+        </>
+      ) : (
+        <Text style={[styles.lineEmpty, { color: c.metadata }]}>
+          Log cravings in your journal to see the trend.
+        </Text>
+      )}
     </View>
   );
 }
 
 function StatsSkeleton() {
   return (
-    <ScrollView
-      style={styles.fill}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
+    <View style={styles.content}>
       <Skeleton width="40%" height={40} style={styles.skelTitle} />
-      <Skeleton width="100%" height={110} />
-      <View style={styles.heroGrid}>
-        <Skeleton width="31%" height={84} />
-        <Skeleton width="31%" height={84} />
-        <Skeleton width="31%" height={84} />
-      </View>
+      <Skeleton width="100%" height={40} />
+      <Skeleton width="100%" height={120} />
       <Skeleton width="100%" height={220} />
-      <Skeleton width="100%" height={160} />
-    </ScrollView>
+      <Skeleton width="100%" height={180} />
+      <Skeleton width="100%" height={200} />
+    </View>
   );
 }
 
 export default function StatsScreen() {
   const theme = useTheme();
   const c = theme.colors;
+  const insets = useSafeAreaInsets();
   const { state, loading } = useAppState();
-  const { width } = useWindowDimensions();
   const { isPremium } = usePremium();
+  const [rangeIndex, setRangeIndex] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [shareDays, setShareDays] = useState<number | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
+
+  const scrollY = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
 
   useEffect(() => {
     if (!loading && state && !state.quit) router.replace('/onboarding');
@@ -147,6 +234,17 @@ export default function StatsScreen() {
     return () => clearInterval(id);
   }, []);
 
+  // Collapsing large title: the big title scrolls away natively; the
+  // compact title cross-fades in over it.
+  const stickyTitleStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [48, 96], [0, 1], Extrapolate.CLAMP),
+  }));
+  const bigTitleStyle = useAnimatedStyle(() => ({
+    opacity: reduceMotion
+      ? 1
+      : interpolate(scrollY.value, [0, 96], [1, 0], Extrapolate.CLAMP),
+  }));
+
   if (loading || !state) {
     return (
       <Screen>
@@ -157,212 +255,131 @@ export default function StatsScreen() {
   if (!state.quit) return null; // redirecting to onboarding
 
   const quit = state.quit;
+  const range = RANGES[rangeIndex];
   const cleanMs = Math.max(0, nowMs - Date.parse(quit.startDate));
   const cleanDays = Math.floor(cleanMs / MS_PER_DAY);
+  // Same data source the v2 screen used: fractional-day money tick.
   const moneyLive = Math.max(0, quit.dailyCost) * (cleanMs / MS_PER_DAY);
   const reclaimed = timeReclaimed(quit.dailyMinutes, cleanDays);
-  const heat = buildCleanHeatmap(quit.startDate, state.relapseLog, nowMs);
-  const timeline = healthTimelineFor(quit.category);
-  const seen = new Set(state.milestonesSeen);
-  const achievedHealth = timeline.filter((m) => cleanMs >= m.atMs).length;
-  const unseenMilestones = MILESTONES.filter((m) => !seen.has(m));
-  const nextMs = unseenMilestones.length > 0 ? unseenMilestones[0] : null;
-  const today = todayKeyLocal(nowMs);
-
-  const sectionHeader = (title: string, sub?: string) => (
-    <View style={styles.sectionHead}>
-      <Text style={[styles.sectionTitle, { color: c.text }]}>{title}</Text>
-      {sub ? (
-        <Text style={[styles.sectionSub, { color: c.metadata }]}>{sub}</Text>
-      ) : null}
-    </View>
+  const buckets = buildStatsChart(
+    range,
+    quit.startDate,
+    state.relapseLog,
+    state.journal,
+    nowMs
   );
+  const seen = new Set(state.milestonesSeen);
+  const next = MILESTONES.find((m) => !seen.has(m)) ?? null;
+  const rangeLabel =
+    range === 'week' ? 'day' : range === 'month' ? 'week' : 'month';
 
   return (
     <Screen>
-      <ScrollView
+      {/* Sticky compact title — fades in as the large title scrolls away. */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.stickyBar,
+          {
+            paddingTop: insets.top,
+            backgroundColor: c.background,
+            borderBottomColor: c.hairline,
+          },
+          stickyTitleStyle,
+        ]}
+      >
+        <Text style={[styles.stickyTitle, { color: c.text }]}>Stats</Text>
+      </Animated.View>
+
+      <Animated.ScrollView
         style={styles.fill}
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
       >
-        <Text style={[styles.title, { color: c.text }]}>Stats</Text>
+        <Animated.Text style={[styles.title, { color: c.text }, bigTitleStyle]}>
+          Stats
+        </Animated.Text>
 
-        {/* Hero numbers — money saved is the hero metric */}
-        <View style={[styles.block, { backgroundColor: c.surface }]}>
-          <Text style={[styles.moneyLabel, { color: c.metadata }]}>
-            SAVED SO FAR
-          </Text>
-          <Text
-            style={[styles.moneyValue, { color: c.text }, styles.tabular]}
-          >
-            {formatMoney(moneyLive)}
-          </Text>
-        </View>
-        <View style={styles.heroGrid}>
-          {[
-            {
-              value: formatTimeReclaimed(reclaimed.hours, reclaimed.minutes),
-              label: 'reclaimed',
-            },
-            {
-              value: cleanDays.toLocaleString('en-US'),
-              label: `day${cleanDays === 1 ? '' : 's'} clean`,
-            },
-            {
-              value: quit.longestStreakDays.toLocaleString('en-US'),
-              label: 'longest streak',
-            },
-          ].map((h) => (
-            <View
-              key={h.label}
-              style={[styles.heroCard, { backgroundColor: c.surface }]}
-            >
-              <Text
-                style={[styles.heroValue, { color: c.text }, styles.tabular]}
-              >
-                {h.value}
-              </Text>
-              <Text style={[styles.heroLabel, { color: c.metadata }]}>
-                {h.label}
-              </Text>
-            </View>
-          ))}
-        </View>
-
-        {/* 12-week heatmap */}
-        <View style={[styles.block, { backgroundColor: c.surface }]}>
-          <Text style={[styles.cardTitle, { color: c.text }]}>
-            Last 12 weeks
-          </Text>
-          <Text style={[styles.cardSub, { color: c.metadata }]}>
-            Every clean day, at a glance.
-          </Text>
-          <Heatmap
-            days={heat}
-            width={width - spacing.lg * 4}
-            theme={theme}
-            today={today}
+        <View style={styles.segmentWrap}>
+          <SegmentedControl
+            segments={[...SEGMENTS]}
+            selectedIndex={rangeIndex}
+            onChange={setRangeIndex}
+            accessibilityLabel="Stats time range"
           />
-          <View style={styles.legend}>
-            <Text style={[styles.legendText, { color: c.metadata }]}>
-              Less
+        </View>
+
+        {/* Totals — money saved is the hero metric. */}
+        <Animated.View
+          entering={FadeIn.delay(0)}
+          style={[styles.totals, { backgroundColor: c.surface }]}
+        >
+          <View style={styles.totalCol}>
+            <Text
+              style={[styles.totalValue, { color: c.text }, typeScale.tabular]}
+            >
+              {formatMoney(moneyLive)}
             </Text>
-            <View style={styles.legendSwatches}>
-              <View
-                style={[
-                  styles.legendSwatch,
-                  { borderWidth: 1, borderColor: c.hairline },
-                ]}
-              />
-              {[0.35, 0.65, 0.9].map((o) => (
-                <View
-                  key={o}
-                  style={[
-                    styles.legendSwatch,
-                    { backgroundColor: c.text, opacity: o },
-                  ]}
-                />
-              ))}
-            </View>
-            <Text style={[styles.legendText, { color: c.metadata }]}>
-              More
+            <Text style={[styles.totalLabel, { color: c.metadata }]}>
+              MONEY SAVED
             </Text>
           </View>
+          <View style={[styles.totalDivider, { backgroundColor: c.hairline }]} />
+          <View style={styles.totalCol}>
+            <Text
+              style={[styles.totalValue, { color: c.text }, typeScale.tabular]}
+            >
+              {formatTimeReclaimed(reclaimed.hours, reclaimed.minutes)}
+            </Text>
+            <Text style={[styles.totalLabel, { color: c.metadata }]}>
+              TIME RECLAIMED
+            </Text>
+          </View>
+        </Animated.View>
+
+        {/* Clean-days bar chart */}
+        <View
+          style={[styles.card, { backgroundColor: c.surface }]}
+          onLayout={(e) => setChartWidth(e.nativeEvent.layout.width)}
+        >
+          <Text style={[styles.cardTitle, { color: c.text }]}>Clean days</Text>
+          <Text style={[styles.cardSub, { color: c.metadata }]}>
+            Share of clean days per {rangeLabel}.
+          </Text>
+          <Bars key={range} buckets={buckets} theme={theme} />
         </View>
 
-        {/* Health timeline */}
-        {sectionHeader(
-          'Body recovery',
-          `${achievedHealth} of ${timeline.length} unlocked`
-        )}
-        <View style={[styles.block, { backgroundColor: c.surface }]}>
-          {timeline.map((m, i) => {
-            const achieved = cleanMs >= m.atMs;
-            const isNext = !achieved && i === achievedHealth;
-            return (
-              <View
-                key={m.label}
-                style={[
-                  styles.tlRow,
-                  i < timeline.length - 1 && {
-                    borderBottomWidth: 1,
-                    borderBottomColor: c.hairline,
-                  },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.tlDot,
-                    {
-                      borderColor: achieved
-                        ? c.accent
-                        : isNext
-                          ? c.accent
-                          : c.hairline,
-                      backgroundColor: achieved ? c.accent : 'transparent',
-                      ...(isNext && { borderStyle: 'dashed' as const }),
-                    },
-                  ]}
-                >
-                  {achieved && (
-                    <Text style={[styles.tlCheck, { color: c.onAccent }]}>
-                      ✓
-                    </Text>
-                  )}
-                </View>
-                <View style={styles.tlText}>
-                  <Text
-                    style={[
-                      styles.tlLabel,
-                      { color: achieved || isNext ? c.text : c.metadata },
-                    ]}
-                  >
-                    {m.label}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.tlDetail,
-                      { color: achieved || isNext ? c.text : c.metadata },
-                    ]}
-                  >
-                    {m.detail}
-                  </Text>
-                </View>
-                {isNext && (
-                  <Text
-                    style={[
-                      styles.nextTag,
-                      { color: c.accent, borderColor: c.accent },
-                    ]}
-                  >
-                    NEXT
-                  </Text>
-                )}
-              </View>
-            );
-          })}
+        {/* Craving intensity */}
+        <View style={[styles.card, { backgroundColor: c.surface }]}>
+          <Text style={[styles.cardTitle, { color: c.text }]}>
+            Craving intensity
+          </Text>
+          <Text style={[styles.cardSub, { color: c.metadata }]}>
+            Average rated craving, 1–5.
+          </Text>
+          {chartWidth > 0 && (
+            <CravingLine buckets={buckets} width={chartWidth} theme={theme} />
+          )}
         </View>
 
-        {/* Milestones */}
-        {sectionHeader('Milestones', 'Tap a glowing milestone to share it.')}
-        <View style={[styles.block, { backgroundColor: c.surface }]}>
+        {/* Milestones timeline */}
+        <SectionHeader title="Milestones" />
+        <View style={[styles.card, { backgroundColor: c.surface }]}>
           {MILESTONES.map((m, i) => {
             const achieved = seen.has(m);
-            const upcoming = !achieved && m === nextMs;
+            const upcoming = !achieved && m === next;
             return (
-              <Pressable
+              <Animated.View
                 key={m}
-                accessibilityRole="button"
-                disabled={!achieved}
-                onPress={() => setShareDays(m)}
-                style={({ pressed }) => [
+                entering={FadeIn.delay(i * STAGGER_MS)}
+                style={[
                   styles.msRow,
                   i < MILESTONES.length - 1 && {
                     borderBottomWidth: 1,
                     borderBottomColor: c.hairline,
                   },
-                  achieved && { backgroundColor: c.accentSoft },
-                  pressed && achieved && styles.pressed,
                 ]}
               >
                 <View
@@ -378,7 +395,6 @@ export default function StatsScreen() {
                     style={[
                       styles.msBadgeText,
                       { color: achieved ? c.onAccent : c.metadata },
-                      achieved && styles.msBadgeTextOn,
                     ]}
                   >
                     {m}
@@ -387,8 +403,7 @@ export default function StatsScreen() {
                 <Text
                   style={[
                     styles.msLabel,
-                    { color: achieved ? c.text : c.metadata },
-                    achieved && styles.msLabelOn,
+                    { color: achieved || upcoming ? c.text : c.metadata },
                   ]}
                 >
                   {m === 365
@@ -396,45 +411,30 @@ export default function StatsScreen() {
                     : m === 1
                       ? 'First day'
                       : `${m} days`}
-                  {upcoming ? ' — next' : ''}
+                  {upcoming ? ' · next' : ''}
                 </Text>
                 {achieved && (
-                  <Text style={[styles.msShare, { color: c.accent }]}>
-                    Share ↗
-                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Share ${m} day milestone`}
+                    onPress={() => setShareDays(m)}
+                    hitSlop={12}
+                    style={styles.msShareHit}
+                  >
+                    <SymbolView
+                      name="square.and.arrow.up"
+                      tintColor={c.accent}
+                      style={styles.msShareIcon}
+                    />
+                  </Pressable>
                 )}
-              </Pressable>
+              </Animated.View>
             );
           })}
         </View>
 
-        {/* Premium upsell */}
-        {!isPremium && (
-          <View
-            style={[
-              styles.block,
-              styles.upsell,
-              { backgroundColor: c.surface },
-            ]}
-          >
-            <Text style={[styles.upsellTitle, { color: c.text }]}>
-              Go further with Sovereign
-            </Text>
-            <Text style={[styles.upsellBody, { color: c.text }]}>
-              Projections, per-day charts, your full health timeline, voice
-              journaling, and premium share-card styles.
-            </Text>
-            <View style={styles.upsellCta}>
-              <GlassButton
-                title="See plans"
-                onPress={() => router.push('/paywall')}
-              />
-            </View>
-          </View>
-        )}
-
         <View style={{ height: spacing.xxl }} />
-      </ScrollView>
+      </Animated.ScrollView>
 
       {shareDays !== null && (
         <ShareCardSheet
@@ -456,116 +456,106 @@ export default function StatsScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  content: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-  title: { ...type.largeTitle, marginBottom: spacing.md },
-  block: {
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+  },
+  stickyBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  stickyTitle: { ...typeScale.headline },
+  title: { ...typeScale.largeTitle, marginBottom: spacing.md },
+  segmentWrap: { marginBottom: spacing.lg },
+  totals: {
+    flexDirection: 'row',
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    alignItems: 'center',
+  },
+  totalCol: { flex: 1, alignItems: 'center' },
+  totalValue: { ...typeScale.headline, fontSize: 22, fontWeight: '700' },
+  totalLabel: {
+    ...typeScale.footnote,
+    letterSpacing: 1,
+    marginTop: spacing.xs,
+  },
+  totalDivider: { width: 1, alignSelf: 'stretch', marginHorizontal: spacing.md },
+  card: {
     borderRadius: radii.lg,
     padding: spacing.lg,
     marginBottom: spacing.md,
   },
-  moneyLabel: {
-    ...type.caption,
-    letterSpacing: 1.5,
-    textAlign: 'center',
-  },
-  moneyValue: {
-    fontSize: 40,
-    fontWeight: '800',
-    letterSpacing: -1,
-    marginTop: spacing.xs,
-    textAlign: 'center',
-  },
-  heroGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-  },
-  heroCard: {
+  cardTitle: { ...typeScale.headline },
+  cardSub: { ...typeScale.footnote, marginTop: 2, marginBottom: spacing.md },
+  bars: { flexDirection: 'row', alignItems: 'stretch' },
+  barCol: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xs,
-    borderRadius: radii.lg,
-  },
-  heroValue: { ...type.headline },
-  heroLabel: { ...type.caption, marginTop: 2, textAlign: 'center' },
-  cardTitle: { ...type.headline },
-  cardSub: { ...type.caption, marginBottom: spacing.md, marginTop: 2 },
-  heatRow: { flexDirection: 'row', gap: CELL_GAP },
-  heatCol: { flex: 1 },
-  heatCell: {},
-  legend: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: spacing.sm,
-    marginTop: spacing.md,
+    gap: spacing.xs,
   },
-  legendText: { ...type.caption },
-  legendSwatches: { flexDirection: 'row', gap: 3 },
-  legendSwatch: { width: 11, height: 11, borderRadius: 3 },
-  sectionHead: { marginTop: spacing.sm, marginBottom: spacing.sm },
-  sectionTitle: { ...type.title3 },
-  sectionSub: { ...type.footnote, marginTop: 2 },
-  tlRow: {
-    flexDirection: 'row',
+  barTrack: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
   },
-  tlDot: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing.md,
+  bar: {
+    width: '62%',
+    borderRadius: radii.sm,
+    minHeight: 8,
   },
-  tlCheck: { fontSize: 14, fontWeight: '700' },
-  tlText: { flex: 1 },
-  tlLabel: { ...type.headline },
-  tlDetail: { ...type.subhead, marginTop: 2 },
-  nextTag: {
-    ...type.caption,
-    fontWeight: '700',
-    borderWidth: 1,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
+  barStub: { width: '62%', height: 4, borderRadius: 2 },
+  barLabel: { ...typeScale.footnote },
+  lineBase: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+  },
+  lineSeg: { position: 'absolute', height: 2, borderRadius: 1 },
+  lineDot: { position: 'absolute', width: 6, height: 6, borderRadius: 3 },
+  lineEmpty: {
+    ...typeScale.footnote,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: LINE_HEIGHT / 2 - 10,
+    textAlign: 'center',
   },
   msRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.sm,
     minHeight: 56,
   },
-  pressed: { opacity: 0.7 },
   msBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing.md,
   },
-  msBadgeText: { ...type.headline },
-  msBadgeTextOn: { fontWeight: '700' },
-  msLabel: { ...type.body, flex: 1 },
-  msLabelOn: { fontWeight: '600' },
-  msShare: { ...type.headline },
-  upsell: {
+  msBadgeText: { ...typeScale.headline },
+  msLabel: { ...typeScale.headline, flex: 1 },
+  msShareHit: {
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
-    gap: spacing.sm,
+    justifyContent: 'center',
   },
-  upsellTitle: { ...type.title3 },
-  upsellBody: {
-    ...type.body,
-    textAlign: 'center',
-  },
-  upsellCta: { alignSelf: 'stretch', marginTop: spacing.sm },
+  msShareIcon: { width: 22, height: 22 },
   skelTitle: { marginBottom: spacing.md },
-  tabular: { ...type.tabular },
 });

@@ -1,27 +1,29 @@
 /**
- * Journal tab (spec §2.7).
+ * Journal tab — v3 rebuild (plan §3.6).
  *
- * - Check-in composer: craving 1–5 + note → JournalEntry (text is free
- *   and unlimited).
- * - Timeline: reverse-chron entries grouped by day ("Today"/"Yesterday"/
- *   short date) in iOS grouped-inset blocks. Long-press an entry to delete.
- * - Voice notes: the mic button is premium-gated — non-members route to the
- *   real paywall (/paywall); members get the real recording pipeline
- *   (components/VoiceNoteRecorder + services/voiceJournal + expo-audio)
- *   mounted behind the entitlement check.
- * - Voice entries (once they exist) render a play/delete row.
- *
- * Monochrome reskin: grouped surface blocks, full-brightness type,
- * Apple-style empty state, inline error with retry for voice-load
- * failures.
+ * - Month-style grouped list of text entries (same day-grouping contract
+ *   the v2 screen used: groupEntriesByDay / formatDayHeader).
+ * - Swipe-to-delete: trailing red action, trash icon + "Delete" label,
+ *   confirmation dialog → the same removeJournalEntry action from
+ *   AppStateContext (v2's long-press contract, upgraded to the swipe
+ *   pattern users expect).
+ * - Composer: bottom sheet (ui/Sheet), large text area, keyboard-tracked
+ *   via a keyboard-height listener (no new deps).
+ * - Voice entries (premium): waveform row; free users get a lock row →
+ *   paywall. VoiceNoteRecorder reused as-is behind the entitlement check.
+ * - Apple-style empty state: journal symbol, "No entries yet", one
+ *   inverted button.
+ * - Five states: loading skeleton, empty, error-with-retry (voice list),
+ *   content.
  */
 import { router } from 'expo-router';
 import { useAudioPlayer } from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import { SymbolView } from 'expo-symbols';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -29,18 +31,18 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 
-import {
-  CravingDots,
-  type CravingValue,
-} from '../../../components/CravingDots';
-import { EmptyState } from '../../../components/EmptyState';
-import { Skeleton } from '../../../components/Skeleton';
-import { GlassButton } from '../../../components/glass/GlassButton';
-import { Screen } from '../../../components/glass/Screen';
-import { Sheet } from '../../../components/glass/Sheet';
-import { TextField } from '../../../components/glass/TextField';
+import { CravingDots, type CravingValue } from '../../../components/CravingDots';
 import { VoiceNoteRecorder } from '../../../components/VoiceNoteRecorder';
+import { EmptyState } from '../../../components/ui/EmptyState';
+import { FAB } from '../../../components/ui/FAB';
+import { GhostButton } from '../../../components/ui/GhostButton';
+import { InvertedButton } from '../../../components/ui/InvertedButton';
+import { Screen } from '../../../components/ui/Screen';
+import { SectionHeader } from '../../../components/ui/SectionHeader';
+import { Sheet } from '../../../components/ui/Sheet';
+import { Skeleton } from '../../../components/ui/Skeleton';
 import { usePremium } from '../../../hooks/usePremium';
 import {
   deleteVoiceJournal,
@@ -53,13 +55,44 @@ import {
 } from '../../../services/journal';
 import { useAppState } from '../../../state/AppStateContext';
 import type { JournalEntry } from '../../../types/app';
-import { radii, spacing, type } from '../../../theme/tokens';
+import { radii, spacing, type as typeScale } from '../../../theme/tokens';
 import { useTheme } from '../../../theme/useTheme';
 import type { Theme } from '../../../theme/tokens';
 
 function formatDuration(millis: number): string {
   const s = Math.floor(millis / 1000);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/** Trailing swipe action — red, labeled, icon + text (ios-native rule). */
+function DeleteAction({
+  onPress,
+  theme,
+  label,
+}: {
+  onPress: () => void;
+  theme: Theme;
+  label: string;
+}) {
+  const c = theme.colors;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={[styles.deleteAction, { backgroundColor: c.danger }]}
+    >
+      <SymbolView name="trash" tintColor={c.onAccent} style={styles.deleteIcon} />
+      <Text style={[styles.deleteLabel, { color: c.onAccent }]}>Delete</Text>
+    </Pressable>
+  );
 }
 
 function TextEntryRow({
@@ -74,10 +107,6 @@ function TextEntryRow({
   last: boolean;
 }) {
   const c = theme.colors;
-  const time = new Date(entry.createdAt).toLocaleTimeString(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
   const confirmDelete = () =>
     Alert.alert('Delete this check-in?', "This can't be undone.", [
       { text: 'Cancel', style: 'cancel' },
@@ -88,29 +117,33 @@ function TextEntryRow({
       },
     ]);
   return (
-    <Pressable
-      onLongPress={confirmDelete}
-      delayLongPress={500}
-      style={({ pressed }) => [
-        styles.entry,
-        !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
-        pressed && styles.pressed,
-      ]}
+    <Swipeable
+      overshootRight={false}
+      renderRightActions={() => (
+        <DeleteAction onPress={confirmDelete} theme={theme} label="Delete check-in" />
+      )}
     >
-      <View style={styles.entryTop}>
-        {entry.craving !== null && (
-          <View style={[styles.cravingChip, { borderColor: c.hairline }]}>
-            <Text style={[styles.cravingChipText, { color: c.metadata }]}>
-              Craving {entry.craving}/5
-            </Text>
-          </View>
-        )}
-        <Text style={[styles.entryTime, { color: c.metadata }]}>
-          {time}
-        </Text>
+      <View
+        style={[
+          styles.entry,
+          !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
+        ]}
+      >
+        <View style={styles.entryTop}>
+          {entry.craving !== null && (
+            <View style={[styles.chip, { borderColor: c.hairline }]}>
+              <Text style={[styles.chipText, { color: c.metadata }]}>
+                Craving {entry.craving}/5
+              </Text>
+            </View>
+          )}
+          <Text style={[styles.entryTime, { color: c.metadata }]}>
+            {formatTime(entry.createdAt)}
+          </Text>
+        </View>
+        <Text style={[styles.entryNote, { color: c.text }]}>{entry.note}</Text>
       </View>
-      <Text style={[styles.entryNote, { color: c.text }]}>{entry.note}</Text>
-    </Pressable>
+    </Swipeable>
   );
 }
 
@@ -156,53 +189,143 @@ function VoiceEntryRow({
     );
 
   return (
-    <View
-      style={[
-        styles.entry,
-        !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
-      ]}
+    <Swipeable
+      overshootRight={false}
+      renderRightActions={() => (
+        <DeleteAction onPress={confirmDelete} theme={theme} label="Delete voice note" />
+      )}
     >
-      <View style={styles.entryTop}>
-        <View style={[styles.voiceChip, { borderColor: c.hairline }]}>
-          <Text style={[styles.voiceChipText, { color: c.metadata }]}>
-            Voice note
+      <View
+        style={[
+          styles.entry,
+          !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
+        ]}
+      >
+        <View style={styles.entryTop}>
+          <View style={[styles.chip, { borderColor: c.hairline }]}>
+            <Text style={[styles.chipText, { color: c.metadata }]}>
+              Voice note
+            </Text>
+          </View>
+          <Text style={[styles.entryTime, { color: c.metadata }]}>
+            {formatDuration(entry.durationMillis)}
           </Text>
         </View>
-        <Text style={[styles.entryTime, { color: c.metadata }]}>
-          {formatDuration(entry.durationMillis)}
-        </Text>
-      </View>
-      <View style={styles.voiceRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
-          onPress={toggle}
-          style={[styles.voicePlay, { backgroundColor: c.accent }]}
-        >
-          <SymbolView
-            name={playing ? 'pause.fill' : 'play.fill'}
-            tintColor={c.onAccent}
-            style={styles.voicePlayIcon}
+        <View style={styles.voiceRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}
+            onPress={toggle}
+            hitSlop={8}
+            style={[styles.voicePlay, { backgroundColor: c.text }]}
+          >
+            <SymbolView
+              name={playing ? 'pause.fill' : 'play.fill'}
+              tintColor={c.background}
+              style={styles.voicePlayIcon}
+            />
+          </Pressable>
+          {/* Waveform placeholder — the row reads as a voice entry. */}
+          <View
+            style={[
+              styles.voiceWave,
+              { backgroundColor: c.background, borderColor: c.hairline },
+            ]}
           />
-        </Pressable>
-        <View
+        </View>
+      </View>
+    </Swipeable>
+  );
+}
+
+function ComposerSheet({
+  visible,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSave: (note: string, craving: CravingValue) => Promise<void>;
+}) {
+  const theme = useTheme();
+  const c = theme.colors;
+  const [note, setNote] = useState('');
+  const [craving, setCraving] = useState<CravingValue>(null);
+  const [saving, setSaving] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  // Keyboard-tracked sheet without new deps: lift the content above the
+  // keyboard by its reported height.
+  useEffect(() => {
+    if (!visible) return;
+    const show = Keyboard.addListener('keyboardDidShow', (e) =>
+      setKeyboardHeight(e.endCoordinates.height)
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () =>
+      setKeyboardHeight(0)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const canSave = note.trim().length > 0 && !saving;
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await onSave(note.trim(), craving);
+      Keyboard.dismiss();
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Sheet visible onClose={onClose} testID="composer-sheet">
+      <View
+        style={[styles.composer, { paddingBottom: keyboardHeight > 0 ? keyboardHeight : undefined }]}
+      >
+        <View style={styles.composerHead}>
+          <Text style={[styles.composerTitle, { color: c.text }]}>
+            New check-in
+          </Text>
+          <GhostButton title="Cancel" onPress={onClose} />
+        </View>
+        <Text style={[styles.composerLabel, { color: c.text }]}>
+          How’s the craving right now?
+        </Text>
+        <CravingDots value={craving} onChange={setCraving} />
+        <TextInput
+          value={note}
+          onChangeText={setNote}
+          placeholder="What's on your mind?"
+          placeholderTextColor={c.metadata}
+          multiline
+          autoFocus
+          maxLength={1000}
+          textAlignVertical="top"
           style={[
-            styles.voiceWave,
-            { backgroundColor: c.background, borderColor: c.hairline },
+            styles.noteInput,
+            {
+              backgroundColor: c.surface,
+              color: c.text,
+              borderColor: c.hairline,
+            },
           ]}
         />
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Delete voice note"
-          onPress={confirmDelete}
-          style={styles.voiceDelete}
-        >
-          <Text style={[styles.voiceDeleteText, { color: c.metadata }]}>
-            Delete
-          </Text>
-        </Pressable>
+        <InvertedButton
+          title={saving ? 'Saving…' : 'Save check-in'}
+          onPress={() => void handleSave()}
+          disabled={!canSave}
+          accessibilityLabel="Save check-in"
+        />
       </View>
-    </View>
+    </Sheet>
   );
 }
 
@@ -230,21 +353,29 @@ function VoiceRecorderSheet({
   );
 }
 
+function JournalSkeleton() {
+  return (
+    <View style={styles.content}>
+      <Skeleton width="40%" height={40} style={styles.skelTitle} />
+      <Skeleton width="100%" height={150} />
+      <Skeleton width="100%" height={120} />
+      <Skeleton width="100%" height={180} />
+    </View>
+  );
+}
+
 export default function JournalScreen() {
   const theme = useTheme();
   const c = theme.colors;
   const { state, loading, addJournal, removeJournalEntry } = useAppState();
-  const [note, setNote] = useState('');
-  const [craving, setCraving] = useState<CravingValue>(null);
-  const [saving, setSaving] = useState(false);
-  const [voiceOpen, setVoiceOpen] = useState(false);
   const { isPremium } = usePremium();
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceEntries, setVoiceEntries] = useState<VoiceJournalEntry[]>([]);
   const [voiceError, setVoiceError] = useState(false);
-  const composerRef = useRef<TextInput>(null);
 
-  // Voice entries merge into the timeline once the gate opens (Day 5).
-  // Behind the gate this stays empty — the pipeline is real, just locked.
+  // Voice entries merge into the timeline; behind the gate this stays
+  // empty — the pipeline is real, just locked.
   useEffect(() => {
     let cancelled = false;
     void listVoiceJournals()
@@ -259,6 +390,10 @@ export default function JournalScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!loading && state && !state.quit) router.replace('/onboarding');
+  }, [loading, state]);
+
   const retryVoiceLoad = () => {
     setVoiceError(false);
     void listVoiceJournals()
@@ -266,189 +401,196 @@ export default function JournalScreen() {
       .catch(() => setVoiceError(true));
   };
 
-  const handleSave = async () => {
-    const trimmed = note.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    try {
-      await addJournal(trimmed, craving);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setNote('');
-      setCraving(null);
-    } finally {
-      setSaving(false);
+  const handleSave = async (note: string, craving: CravingValue) => {
+    await addJournal(note, craving);
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
+
+  const openVoice = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isPremium) {
+      setVoiceOpen(true);
+    } else {
+      router.push('/paywall');
     }
   };
 
   if (loading || !state) {
     return (
       <Screen>
-        <ScrollView
-          style={styles.fill}
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-        >
-          <Skeleton width="40%" height={40} style={styles.skelTitle} />
-          <Skeleton width="100%" height={230} />
-          <Skeleton width="100%" height={120} />
-        </ScrollView>
+        <JournalSkeleton />
       </Screen>
     );
   }
+  if (!state.quit) return null; // redirecting to onboarding
 
   const groups = groupEntriesByDay(state.journal);
-  // "Now" at render time — idempotent within a render, safe here.
   // eslint-disable-next-line react-hooks/purity
   const nowMs = Date.now();
   const hasAnything = groups.length > 0 || voiceEntries.length > 0;
-  const canSave = note.trim().length > 0 && !saving;
 
   return (
     <Screen>
-      <ScrollView
-        style={styles.fill}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={[styles.title, { color: c.text }]}>Journal</Text>
+      <GestureHandlerRootView style={styles.fill}>
+        <ScrollView
+          style={styles.fill}
+          contentContainerStyle={[styles.content, !hasAnything && !voiceError && styles.contentEmpty]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={[styles.title, { color: c.text }]}>Journal</Text>
 
-        <View style={[styles.composer, { backgroundColor: c.surface }]}>
-          <Text style={[styles.composerLabel, { color: c.text }]}>
-            How’s the craving right now?
-          </Text>
-          <CravingDots value={craving} onChange={setCraving} />
-          <TextField
-            ref={composerRef}
-            value={note}
-            onChangeText={setNote}
-            placeholder="What's on your mind?"
-            multiline
-            maxLength={1000}
-            inputStyle={styles.noteInput}
-            style={styles.noteField}
+          {!hasAnything && !voiceError ? (
+            <EmptyState
+              iosSymbol="book.closed"
+              androidSymbol="book"
+              title="No entries yet"
+              message="The first one is the hardest — and the most honest."
+              actionLabel="Write a check-in"
+              onAction={() => setComposerOpen(true)}
+            />
+          ) : (
+            <>
+              {voiceError && (
+                <View style={[styles.block, { backgroundColor: c.surface }]}>
+                  <Text style={[styles.errorTitle, { color: c.text }]}>
+                    Couldn’t load voice notes
+                  </Text>
+                  <Text style={[styles.errorBody, { color: c.metadata }]}>
+                    Your text check-ins are safe. This is just the voice list.
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Retry loading voice notes"
+                    onPress={retryVoiceLoad}
+                    hitSlop={12}
+                    style={styles.retry}
+                  >
+                    <Text style={[styles.retryText, { color: c.accent }]}>
+                      Try again
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* Voice notes — waveform rows, or the lock affordance. */}
+              <SectionHeader title="Voice notes" />
+              <View style={[styles.block, { backgroundColor: c.surface }]}>
+                {voiceEntries.map((v, i) => (
+                  <VoiceEntryRow
+                    key={v.id}
+                    entry={v}
+                    onDeleted={setVoiceEntries}
+                    theme={theme}
+                    last={isPremium ? i === voiceEntries.length - 1 : false}
+                  />
+                ))}
+                {!isPremium && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Voice notes are a Sovereign feature. Open plans."
+                    onPress={() => router.push('/paywall')}
+                    style={({ pressed }) => [
+                      styles.lockRow,
+                      voiceEntries.length > 0 && {
+                        borderTopWidth: 1,
+                        borderTopColor: c.hairline,
+                      },
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <SymbolView
+                      name="lock.fill"
+                      tintColor={c.metadata}
+                      style={styles.lockIcon}
+                    />
+                    <View style={styles.lockText}>
+                      <Text style={[styles.lockTitle, { color: c.text }]}>
+                        Voice notes
+                      </Text>
+                      <Text style={[styles.lockSub, { color: c.metadata }]}>
+                        A Sovereign feature — record instead of typing.
+                      </Text>
+                    </View>
+                    <SymbolView
+                      name="chevron.right"
+                      tintColor={c.metadata}
+                      style={styles.lockChevron}
+                    />
+                  </Pressable>
+                )}
+                {isPremium && voiceEntries.length === 0 && (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Record a voice note"
+                    onPress={openVoice}
+                    style={({ pressed }) => [
+                      styles.lockRow,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <SymbolView
+                      name="mic.fill"
+                      tintColor={c.accent}
+                      style={styles.lockIcon}
+                    />
+                    <View style={styles.lockText}>
+                      <Text style={[styles.lockTitle, { color: c.text }]}>
+                        Record your first voice note
+                      </Text>
+                      <Text style={[styles.lockSub, { color: c.metadata }]}>
+                        Some days are easier said than written.
+                      </Text>
+                    </View>
+                  </Pressable>
+                )}
+              </View>
+
+              {groups.map((group) => (
+                <View key={group.dayKey}>
+                  <SectionHeader
+                    title={formatDayHeader(group.dayKey, nowMs)}
+                  />
+                  <View style={[styles.block, { backgroundColor: c.surface }]}>
+                    {group.entries.map((entry, i) => (
+                      <TextEntryRow
+                        key={entry.id}
+                        entry={entry}
+                        onDelete={(id) => {
+                          void removeJournalEntry(id);
+                        }}
+                        theme={theme}
+                        last={i === group.entries.length - 1}
+                      />
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+        </ScrollView>
+
+        {/* Composer FAB — accent fill, the one colored spot. */}
+        <View style={styles.fabWrap} pointerEvents="box-none">
+          <FAB
+            iosSymbol="plus"
+            androidSymbol="add"
+            label="New journal entry"
+            onPress={() => setComposerOpen(true)}
           />
-          <View style={styles.composerRow}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={
-                isPremium
-                  ? 'Record a voice note'
-                  : 'Record a voice note (Sovereign members only)'
-              }
-              onPress={() => {
-                void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                if (isPremium) {
-                  setVoiceOpen(true);
-                } else {
-                  router.push('/paywall');
-                }
-              }}
-              style={({ pressed }) => [
-                styles.micButton,
-                { backgroundColor: c.background },
-                pressed && styles.pressed,
-              ]}
-            >
-              <SymbolView
-                name={{ ios: 'mic.fill' as never, android: 'mic' as never }}
-                tintColor={isPremium ? c.accent : c.metadata}
-                style={styles.micIcon}
-              />
-            </Pressable>
-            <View style={styles.saveWrap}>
-              <GlassButton
-                title={saving ? 'Saving…' : 'Save check-in'}
-                onPress={handleSave}
-                disabled={!canSave}
-              />
-            </View>
-          </View>
         </View>
 
-        {!hasAnything && !voiceError && (
-          <EmptyState
-            symbol="book.closed"
-            materialSymbol="book"
-            headline="No check-ins yet"
-            body="The first one is the hardest — and the most honest."
-            actionTitle="Write a check-in"
-            onAction={() => composerRef.current?.focus()}
-          />
-        )}
-
-        {voiceError && (
-          <View style={[styles.block, { backgroundColor: c.surface }]}>
-            <Text style={[styles.errorTitle, { color: c.text }]}>
-              Couldn’t load voice notes
-            </Text>
-            <Text style={[styles.errorBody, { color: c.metadata }]}>
-              Your text check-ins are safe. This is just the voice list.
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={retryVoiceLoad}
-              style={styles.retry}
-            >
-              <Text style={[styles.retryText, { color: c.accent }]}>
-                Try again
-              </Text>
-            </Pressable>
-          </View>
-        )}
-
-        {voiceEntries.length > 0 && (
-          <View style={styles.section}>
-            <Text style={[styles.dayHeader, { color: c.metadata }]}>
-              VOICE NOTES
-            </Text>
-            <View style={[styles.block, { backgroundColor: c.surface }]}>
-              {voiceEntries.map((v, i) => (
-                <VoiceEntryRow
-                  key={v.id}
-                  entry={v}
-                  onDeleted={setVoiceEntries}
-                  theme={theme}
-                  last={i === voiceEntries.length - 1}
-                />
-              ))}
-            </View>
-          </View>
-        )}
-
-        {groups.map((group) => (
-          <View key={group.dayKey} style={styles.section}>
-            <Text style={[styles.dayHeader, { color: c.metadata }]}>
-              {formatDayHeader(group.dayKey, nowMs).toUpperCase()}
-            </Text>
-            <View style={[styles.block, { backgroundColor: c.surface }]}>
-              {group.entries.map((entry, i) => (
-                <TextEntryRow
-                  key={entry.id}
-                  entry={entry}
-                  onDelete={(id) => {
-                    void removeJournalEntry(id);
-                  }}
-                  theme={theme}
-                  last={i === group.entries.length - 1}
-                />
-              ))}
-            </View>
-          </View>
-        ))}
-
-        {hasAnything && (
-          <Text style={[styles.hint, { color: c.metadata }]}>
-            Tip: long-press an entry to delete it.
-          </Text>
-        )}
-      </ScrollView>
-
-      <VoiceRecorderSheet
-        visible={voiceOpen}
-        onClose={() => setVoiceOpen(false)}
-        onSaved={setVoiceEntries}
-      />
+        <ComposerSheet
+          visible={composerOpen}
+          onClose={() => setComposerOpen(false)}
+          onSave={handleSave}
+        />
+        <VoiceRecorderSheet
+          visible={voiceOpen}
+          onClose={() => setVoiceOpen(false)}
+          onSaved={setVoiceEntries}
+        />
+      </GestureHandlerRootView>
     </Screen>
   );
 }
@@ -456,42 +598,12 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   content: {
-    flexGrow: 1,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
     paddingTop: spacing.md,
-    gap: spacing.lg,
+    paddingBottom: 96,
   },
-  title: { ...type.largeTitle },
-  composer: {
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  composerLabel: { ...type.headline },
-  noteField: {},
-  noteInput: {
-    minHeight: 88,
-    textAlignVertical: 'top',
-    paddingTop: spacing.sm,
-  },
-  composerRow: { flexDirection: 'row', gap: spacing.md, alignItems: 'stretch' },
-  micButton: {
-    width: 56,
-    minHeight: 48,
-    borderRadius: radii.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  micIcon: { width: 22, height: 22 },
-  pressed: { opacity: 0.7 },
-  saveWrap: { flex: 1 },
-  section: { gap: spacing.sm },
-  dayHeader: {
-    ...type.footnote,
-    letterSpacing: 1,
-    marginTop: spacing.xs,
-  },
+  contentEmpty: { flexGrow: 1 },
+  title: { ...typeScale.largeTitle, marginBottom: spacing.md },
   block: {
     borderRadius: radii.lg,
     paddingHorizontal: spacing.md,
@@ -499,30 +611,43 @@ const styles = StyleSheet.create({
   },
   entry: {
     paddingVertical: spacing.md,
-    gap: spacing.xs,
+    gap: spacing.sm,
+    backgroundColor: 'transparent',
   },
   entryTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  cravingChip: {
+  chip: {
     borderWidth: 1,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
-  cravingChipText: { ...type.caption, fontWeight: '600' },
-  entryTime: { ...type.caption },
-  entryNote: { ...type.body, lineHeight: 24 },
-  voiceChip: {
-    borderWidth: 1,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+  chipText: { ...typeScale.footnote, fontWeight: '600' },
+  entryTime: { ...typeScale.footnote },
+  entryNote: { ...typeScale.body, lineHeight: 24 },
+  pressed: { opacity: 0.7 },
+  // Swipe delete action
+  deleteAction: {
+    width: 88,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
   },
-  voiceChipText: { ...type.caption, fontWeight: '600' },
-  voiceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  deleteIcon: { width: 22, height: 22 },
+  deleteLabel: {
+    ...typeScale.footnote,
+    fontWeight: '600',
+  },
+  // Voice rows
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginTop: spacing.xs,
+  },
   voicePlay: {
     width: 44,
     height: 44,
@@ -537,16 +662,51 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     borderWidth: 1,
   },
-  voiceDelete: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
-  voiceDeleteText: { ...type.headline },
-  hint: {
-    ...type.footnote,
-    textAlign: 'center',
+  lockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.md,
+    minHeight: 64,
   },
-  errorTitle: { ...type.headline, paddingTop: spacing.md },
-  errorBody: { ...type.subhead, marginTop: 2 },
-  retry: { paddingVertical: spacing.md, minHeight: 44, justifyContent: 'center' },
-  retryText: { ...type.headline },
+  lockIcon: { width: 22, height: 22 },
+  lockText: { flex: 1, gap: 2 },
+  lockTitle: { ...typeScale.headline },
+  lockSub: { ...typeScale.footnote },
+  lockChevron: { width: 14, height: 14 },
+  // Composer
+  composer: {
+    paddingHorizontal: spacing.lg,
+    gap: spacing.md,
+  },
+  composerHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  composerTitle: { ...typeScale.title3 },
+  composerLabel: { ...typeScale.headline },
+  noteInput: {
+    ...typeScale.body,
+    minHeight: 160,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
   recorderWrap: { padding: spacing.lg, gap: spacing.md },
-  skelTitle: { marginBottom: spacing.xs },
+  // States
+  errorTitle: { ...typeScale.headline, paddingTop: spacing.md },
+  errorBody: { ...typeScale.footnote, marginTop: 2 },
+  retry: {
+    paddingVertical: spacing.md,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  retryText: { ...typeScale.headline },
+  fabWrap: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.lg,
+  },
+  skelTitle: { marginBottom: spacing.md },
 });
