@@ -19,8 +19,15 @@ import {
   isGlassEffectAPIAvailable,
   isLiquidGlassAvailable,
 } from 'expo-glass-effect';
-import React from 'react';
-import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  AccessibilityInfo,
+  Platform,
+  StyleProp,
+  StyleSheet,
+  View,
+  ViewStyle,
+} from 'react-native';
 
 import { useTheme } from '../../theme/useTheme';
 
@@ -63,8 +70,7 @@ function GlassFallback({
     <View
       style={[
         styles.fallbackHost,
-        { shadowColor: theme.colors.shadow },
-        styles.fallbackShadow,
+        { boxShadow: '0px 8px 18px rgba(0,0,0,0.18)' },
         style,
       ]}
     >
@@ -98,8 +104,45 @@ export function GlassSurface({
   tintColor,
   fallbackIntensity = 70,
 }: GlassSurfaceProps) {
+  const theme = useTheme();
   // borderRadius + overflow hidden are required for the glass to clip correctly.
   const clippedStyle: ViewStyle = { overflow: 'hidden' };
+
+  // Reduce Transparency → solid surface + hairline. Terminal tier, same
+  // promise as the v3 ui/GlassView ladder: transparency never renders.
+  const [reduceTransparency, setReduceTransparency] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    void AccessibilityInfo.isReduceTransparencyEnabled().then((enabled) => {
+      if (mounted) setReduceTransparency(enabled);
+    });
+    const subscription = AccessibilityInfo.addEventListener(
+      'reduceTransparencyChanged',
+      setReduceTransparency
+    );
+    return () => {
+      mounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  if (reduceTransparency) {
+    return (
+      <View
+        style={[
+          clippedStyle,
+          style,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.hairline,
+            borderWidth: StyleSheet.hairlineWidth,
+          },
+        ]}
+      >
+        {children}
+      </View>
+    );
+  }
 
   if (canUseNativeGlass()) {
     return (
@@ -129,13 +172,6 @@ export function isNativeGlassActive(): boolean {
 const styles = StyleSheet.create({
   fallbackHost: {
     overflow: 'hidden',
-  },
-  // Layer 5 — soft drop shadow (color from tokens; geometry here).
-  fallbackShadow: {
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
   },
   fallbackContent: {
     flex: 1,

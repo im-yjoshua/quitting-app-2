@@ -49,6 +49,8 @@ export function Sheet({
   const [rendered, setRendered] = useState(visible);
   const translateY = useSharedValue(height);
   const backdrop = useSharedValue(0);
+  // Reduce Motion: the panel cross-fades (opacity) instead of sliding.
+  const panelOpacity = useSharedValue(1);
 
   useEffect(() => {
     if (visible) {
@@ -58,17 +60,23 @@ export function Sheet({
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRendered(true);
       backdrop.value = withTiming(1, { duration: 200 });
-      translateY.value = reduceMotion
-        ? withTiming(0, { duration: 200 })
-        : withSpring(0, motion.standard);
+      if (reduceMotion) {
+        translateY.value = 0; // no travel — cross-fade only
+        panelOpacity.value = withTiming(1, { duration: 200 });
+      } else {
+        panelOpacity.value = 1;
+        translateY.value = withSpring(0, motion.standard);
+      }
     } else if (rendered) {
       backdrop.value = withTiming(0, { duration: 180 });
       const done = (finished?: boolean) => {
         if (finished) setRendered(false);
       };
-      translateY.value = reduceMotion
-        ? withTiming(height, { duration: 180 }, done)
-        : withTiming(height, { duration: 220 }, done);
+      if (reduceMotion) {
+        panelOpacity.value = withTiming(0, { duration: 180 }, done);
+      } else {
+        translateY.value = withTiming(height, { duration: 220 }, done);
+      }
     }
     // `rendered` is read intentionally to avoid re-animating on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -76,6 +84,7 @@ export function Sheet({
 
   const sheetStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
+    opacity: panelOpacity.value,
   }));
   const backdropStyle = useAnimatedStyle(() => ({
     opacity: backdrop.value,

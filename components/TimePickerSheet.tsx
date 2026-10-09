@@ -1,10 +1,13 @@
 /**
- * TimePickerSheet — editable pledge-time picker on the Sheet primitive.
+ * TimePickerSheet — editable pledge-time picker on the v3 Sheet primitive.
  *
  * Two 24h drums (hour 0–23, minute 0–59) built from RN primitives only —
  * no native date picker (Expo Go compatibility is sacred). 44pt rows,
  * snap-to-row scrolling, haptic ticks, Reanimated press springs.
  * Saves back as "HH:MM" zero-padded.
+ *
+ * v3 reskin (Phase 3): ui/Sheet + InvertedButton/GhostButton; drums already
+ * spoke theme/tokens.
  */
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef, useState } from 'react';
@@ -16,9 +19,11 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useReducedMotion } from 'react-native-reanimated';
 
-import { GlassButton } from './glass/GlassButton';
-import { Sheet } from './glass/Sheet';
+import { GhostButton } from './ui/GhostButton';
+import { InvertedButton } from './ui/InvertedButton';
+import { Sheet } from './ui/Sheet';
 import { formatPledgeTime12h } from '../services/pledgeTime';
 import { motion, radii, spacing, type } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
@@ -56,7 +61,7 @@ function DrumRow({
   selectedColor: string;
 }) {
   // Legacy Animated API: method calls only — the shared-value assignment
-  // form trips the react-hooks/immutability lint rule (see GlassButton).
+  // form trips the react-hooks/immutability lint rule.
   const [scaleAnim] = useState(() => new RNAnimated.Value(1));
   const springTo = (toValue: number) => {
     RNAnimated.spring(scaleAnim, {
@@ -105,6 +110,7 @@ function DrumColumn({
 }) {
   const theme = useTheme();
   const c = theme.colors;
+  const reduceMotion = useReducedMotion();
   const listRef = useRef<FlatList<number | null>>(null);
 
   // nulls pad top/bottom so the first/last value can center.
@@ -121,7 +127,10 @@ function DrumColumn({
     // Already there: the drag/momentum end pair fires twice for one flick;
     // the second lands after the re-render with the new value in closure.
     if (clamped === values.indexOf(value)) return;
-    listRef.current?.scrollToIndex({ index: clamped + 2, animated: true });
+    listRef.current?.scrollToIndex({
+      index: clamped + 2,
+      animated: !reduceMotion,
+    });
     void Haptics.selectionAsync();
     onChange(values[clamped]);
   };
@@ -208,7 +217,7 @@ export function TimePickerSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} dismissLabel="Close time picker">
+    <Sheet visible={visible} onClose={onClose}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: c.text }]}>Pledge time</Text>
         <Text style={[styles.subtitle, { color: c.metadata }]}>
@@ -240,8 +249,8 @@ export function TimePickerSheet({
       </View>
 
       <View style={styles.actions}>
-        <GlassButton title="Save" onPress={handleSave} variant="primary" />
-        <GlassButton title="Cancel" onPress={onClose} variant="secondary" />
+        <InvertedButton title="Save" onPress={handleSave} />
+        <GhostButton title="Cancel" onPress={onClose} />
       </View>
       <View style={{ height: spacing.md }} />
     </Sheet>

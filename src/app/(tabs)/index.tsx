@@ -1,119 +1,65 @@
 /**
- * Home — the soul of the app.
+ * Home — the soul of Sovereign v3 (Phase 4 rebuild).
  *
- * Monochrome canvas; the Orb is the only color story. Top→bottom:
- * - The Orb (hero): living glass sphere, tap for the exact clean-time sheet.
- * - DAY 47 — giant full-brightness numeral + live-ticking counter below.
- * - Pledge button: inverted primary. "Pledge today" → "Pledged ✓ · streak".
- * - Rotating reason (slow 12s crossfade) — the emotional hook.
- * - "Craving right now?" (quiet accent link) → Urge Surf.
- *   "I slipped" (quiet) → Relapse.
+ * Minimal, not a dashboard. Top→bottom:
+ * - Orb v2 (the one intentional color object): large, slow breathing,
+ *   day count + "days clean" in its center.
+ * - Live ticker: HH:MM:SS in tabular numerals, footnote label
+ *   "clean time right now" (numbers just change — no animation on tick).
+ * - Pledge card (glass): "Today's pledge" — unpledged: quiet outline
+ *   button "I pledge today"; pledged: "Pledged ✓ · N-day streak".
+ * - Next milestone: hairline progress track + ring, "N days to M days".
+ * - Urge FAB (Home-only): floating violet waveform circle, routes to
+ *   the urge-surf modal.
  *
- * Logic (pledge flow, route guard, milestone + share wiring, 1s tick) is
- * unchanged from the pre-redesign build — this file is a visual recomposition.
+ * Deliberately absent: stat chips, charts, grids (those live in Stats).
+ *
+ * Logic is presentation-only: the pledge/streak/milestone contracts come
+ * from services/* and state/AppStateContext (untouched); the celebration
+ * hook keeps firing exactly-once milestone sheets.
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
-  Animated,
   AppState as RNAppState,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Orb } from '../../../components/Orb';
-import type { OrbTheme } from '../../../types/app';
+import { FAB, GhostButton, GlassCard, ProgressRing, Screen, Skeleton } from '../../../components/ui';
+import { Orb } from '../../../components/orb';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
-import { GlassButton } from '../../../components/glass/GlassButton';
-import { Screen } from '../../../components/glass/Screen';
-import { Sheet } from '../../../components/glass/Sheet';
-import { MS_PER_DAY } from '../../../services/chronometerEngine';
+import {
+  breakDownDuration,
+  calculateCleanDurationMs,
+  MS_PER_DAY,
+} from '../../../services/chronometerEngine';
+import { MILESTONES, nextMilestone } from '../../../services/milestones';
 import { hasPledgedToday } from '../../../services/pledge';
 import { useAppState } from '../../../state/AppStateContext';
 import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
 import { usePremium } from '../../../hooks/usePremium';
 import { useTheme } from '../../../theme/useTheme';
-import { spacing, type } from '../../../theme/tokens';
+import { spacing, radii, type as typeScale } from '../../../theme/tokens';
 
-const REASON_ROTATE_MS = 12000;
-
-function ExactTimeSheet({
-  visible,
-  onClose,
-  nowMs,
-  startMs,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  nowMs: number;
-  startMs: number;
-}) {
-  const theme = useTheme();
-  const cleanMs = Math.max(0, nowMs - startMs);
-  const days = Math.floor(cleanMs / MS_PER_DAY);
-  const hours = Math.floor(cleanMs / 3_600_000) % 24;
-  const minutes = Math.floor(cleanMs / 60_000) % 60;
-  const seconds = Math.floor(cleanMs / 1000) % 60;
-  const started = new Date(startMs).toLocaleDateString(undefined, {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+/** Loading state: skeletons in the shape of the Home layout (orb circle,
+ * ticker lines, pledge card, milestone block). Layout is known, so no
+ * full-screen spinner. */
+function HomeSkeleton({ orbSize }: { orbSize: number }) {
   return (
-    <Sheet visible={visible} onClose={onClose}>
-      <View style={styles.sheetInner}>
-        <Text style={[styles.sheetEyebrow, { color: theme.colors.metadata }]}>
-          EXACT CLEAN TIME
-        </Text>
-        <Text
-          style={[
-            styles.sheetTime,
-            { color: theme.colors.text, ...type.tabular },
-          ]}
-        >
-          {days}d {String(hours).padStart(2, '0')}h{' '}
-          {String(minutes).padStart(2, '0')}m {String(seconds).padStart(2, '0')}s
-        </Text>
-        <Text style={[styles.sheetSub, { color: theme.colors.metadata }]}>
-          Clean since {started}
-        </Text>
-        <GlassButton
-          title="Close"
-          onPress={onClose}
-          variant="primary"
-          style={styles.sheetBtn}
-        />
+    <View style={styles.skelContent} testID="home-loading">
+      <View style={styles.skelOrbWrap}>
+        <Skeleton width={orbSize} height={orbSize} radius={orbSize / 2} />
       </View>
-    </Sheet>
-  );
-}
-
-function OrbHero({
-  theme,
-  cleanMs,
-  size,
-  onPress,
-}: {
-  theme: OrbTheme;
-  cleanMs: number;
-  size: number;
-  onPress: () => void;
-}) {
-  return (
-    <View style={styles.orbHero}>
-      <Orb
-        cleanDays={cleanMs / MS_PER_DAY}
-        theme={theme}
-        size={size}
-        onPress={onPress}
-      />
+      <Skeleton width="55%" height={34} style={styles.skelCenter} />
+      <Skeleton width="40%" height={16} style={styles.skelCenter} />
+      <Skeleton width="100%" height={118} radius={radii.lg} />
+      <Skeleton width="100%" height={132} radius={radii.lg} />
     </View>
   );
 }
@@ -122,12 +68,14 @@ export default function HomeScreen() {
   const { state, loading, pledgeNow } = useAppState();
   const theme = useTheme();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [sheetVisible, setSheetVisible] = useState(false);
   const celebration = useMilestoneCelebration();
   const { isPremium } = usePremium();
 
-  // 1s live tick, paused while backgrounded.
+  // 1s live tick, paused while backgrounded. The counter reads from the
+  // same time source as the v2 Home (quit.startDate vs Date.now()) through
+  // the chronometer engine's pure helpers — numbers change, nothing animates.
   useEffect(() => {
     let id: ReturnType<typeof setInterval> | null = null;
     const start = () => {
@@ -161,58 +109,31 @@ export default function HomeScreen() {
     }
   }, [loading, state]);
 
-  const quit = state?.quit;
-
-  // Rotating reasons — slow 12s crossfade between the onboarding-captured
-  // reasons. Ambient, not decorative: it's the emotional hook of the screen.
-  const reasons = quit?.reasons ?? [];
-  const [reasonIdx, setReasonIdx] = useState(0);
-  // useState (not useRef().current) holds the Animated.Value — the
-  // react-hooks/refs lint rule forbids reading ref values during render.
-  const [reasonFade] = useState(() => new Animated.Value(1));
-  useEffect(() => {
-    if (reasons.length < 2) return;
-    const id = setInterval(() => {
-      Animated.timing(reasonFade, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }).start(() => {
-        setReasonIdx((i) => (i + 1) % reasons.length);
-        Animated.timing(reasonFade, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }).start();
-      });
-    }, REASON_ROTATE_MS);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reasons.length]);
+  const orbSize = Math.min(width * 0.62, 300);
 
   if (loading || !state) {
     return (
       <Screen>
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color={theme.colors.text} />
-        </View>
+        <HomeSkeleton orbSize={orbSize} />
       </Screen>
     );
   }
+  const quit = state.quit;
   if (!quit) return null; // redirecting to onboarding
 
-  const cleanMs = Math.max(0, nowMs - Date.parse(quit.startDate));
-  const cleanDays = Math.floor(cleanMs / MS_PER_DAY);
-  const totalHours = Math.floor(cleanMs / 3_600_000);
-  const minutes = Math.floor(cleanMs / 60_000) % 60;
-  const seconds = Math.floor(cleanMs / 1000) % 60;
-  const counterLine = `${totalHours.toLocaleString('en-US')} h ${String(
-    minutes
-  ).padStart(2, '0')} m ${String(seconds).padStart(2, '0')} s`;
+  const cleanMs = calculateCleanDurationMs(nowMs, Date.parse(quit.startDate));
+  const bd = breakDownDuration(cleanMs);
+  const days = bd.days;
 
   const pledged = hasPledgedToday(state.pledge, nowMs);
   const pledgeStreak = state.pledge.pledgeStreak;
-  const orbSize = Math.min(width * 0.62, 300);
+
+  // Next milestone: progress measured from the previous milestone so the
+  // ring fills between them ("13 days to 60 days" at day 47).
+  const next = nextMilestone(days);
+  const prev = [...MILESTONES].reverse().find((m) => m <= days) ?? 0;
+  const milestoneProgress =
+    next === null ? 1 : Math.min(1, Math.max(0, (days - prev) / (next - prev)));
 
   const handlePledge = async () => {
     const counted = await pledgeNow();
@@ -222,97 +143,124 @@ export default function HomeScreen() {
   };
 
   return (
-    <Screen>
-      <ScrollView
-        style={styles.fill}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <OrbHero
-          theme={state.settings.orbTheme}
-          cleanMs={cleanMs}
-          size={orbSize}
-          onPress={() => setSheetVisible(true)}
-        />
+    <View style={styles.root} testID="home-root">
+      <Screen scrollable>
+        <View style={styles.orbZone}>
+          <Orb cleanDays={cleanMs / MS_PER_DAY} size={orbSize} testID="home-orb" />
+        </View>
 
-        <View style={styles.counter}>
-          <Text style={[styles.streakEyebrow, { color: theme.colors.metadata }]}>
-            CURRENT STREAK
-          </Text>
+        <View
+          style={styles.ticker}
+          accessibilityRole="timer"
+          accessibilityLabel={`Clean time right now: ${days} days, ${bd.hours} hours, ${bd.minutes} minutes, ${bd.seconds} seconds`}
+          testID="home-ticker"
+        >
           <Text
             style={[
-              styles.dayNumber,
-              { color: theme.colors.text, ...type.tabular },
+              styles.tickerTime,
+              { color: theme.colors.text, ...typeScale.tabular },
             ]}
           >
-            {cleanDays.toLocaleString('en-US')}
+            {bd.formattedHours}:{bd.formattedMinutes}:{bd.formattedSeconds}
           </Text>
-          <Text style={[styles.dayCaption, { color: theme.colors.metadata }]}>
-            day{cleanDays === 1 ? '' : 's'} clean
-          </Text>
-          <Text
-            style={[
-              styles.counterLine,
-              { color: theme.colors.metadata, ...type.tabular },
-            ]}
-          >
-            {counterLine}
+          <Text style={[styles.tickerLabel, { color: theme.colors.metadata }]}>
+            clean time right now
           </Text>
         </View>
 
-        <View style={styles.pledgeWrap}>
-          <GlassButton
-            title={
-              pledged
-                ? `Pledged ✓${
-                    pledgeStreak > 0 ? ` · ${pledgeStreak}-day streak` : ''
-                  }`
-                : 'Pledge today'
-            }
-            onPress={handlePledge}
-            variant="primary"
-            disabled={pledged}
-          />
-        </View>
-
-        {reasons.length > 0 && (
-          <Animated.Text
-            style={[
-              styles.reason,
-              { color: theme.colors.text, opacity: reasonFade },
-            ]}
-          >
-            “{reasons[reasonIdx % reasons.length]}”
-          </Animated.Text>
-        )}
-
-        <View style={styles.links}>
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => router.push('/urge-surf')}
-            style={styles.linkHit}
-          >
-            <Text style={[styles.cravingText, { color: theme.colors.accent }]}>
-              Craving right now?
+        <View style={styles.cardZone}>
+          <GlassCard testID="pledge-card">
+            <Text style={[styles.cardTitle, { color: theme.colors.text }]}>
+              Today&apos;s pledge
             </Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="link"
-            onPress={() => router.push('/relapse')}
-            style={styles.linkHit}
-          >
-            <Text style={[styles.slipText, { color: theme.colors.metadata }]}>
-              I slipped
-            </Text>
-          </Pressable>
+            {pledged ? (
+              <Text
+                style={[styles.pledgedLine, { color: theme.colors.text }]}
+                accessibilityRole="text"
+                accessibilityLabel={
+                  pledgeStreak > 0
+                    ? `Pledged today. ${pledgeStreak}-day pledge streak.`
+                    : 'Pledged today.'
+                }
+                testID="pledge-status"
+              >
+                Pledged ✓
+                {pledgeStreak > 0 ? ` · ${pledgeStreak}-day streak` : ''}
+              </Text>
+            ) : (
+              <GhostButton
+                title="I pledge today"
+                onPress={handlePledge}
+                style={styles.pledgeButton}
+                testID="pledge-button"
+              />
+            )}
+          </GlassCard>
         </View>
-      </ScrollView>
 
-      <ExactTimeSheet
-        visible={sheetVisible}
-        onClose={() => setSheetVisible(false)}
-        nowMs={nowMs}
-        startMs={Date.parse(quit.startDate)}
+        <View style={styles.milestoneZone} testID="milestone-block">
+          <Text style={[styles.eyebrow, { color: theme.colors.metadata }]}>
+            NEXT MILESTONE
+          </Text>
+          {next !== null ? (
+            <>
+              <View style={styles.milestoneRow}>
+                <ProgressRing
+                  progress={milestoneProgress}
+                  size={64}
+                  stroke={6}
+                  color={theme.colors.text}
+                  testID="milestone-ring"
+                >
+                  <Text
+                    style={[
+                      styles.ringNumber,
+                      { color: theme.colors.text, ...typeScale.tabular },
+                    ]}
+                  >
+                    {next - days}
+                  </Text>
+                </ProgressRing>
+                <Text
+                  style={[styles.milestoneLine, { color: theme.colors.text }]}
+                  accessibilityLabel={`${next - days} days to the ${next}-day milestone`}
+                >
+                  {next - days} days to {next} days
+                </Text>
+              </View>
+              {/* Decorative twin of the ring above (which already exposes
+                  the progressbar role) — hidden from VoiceOver. */}
+              <View
+                style={[styles.track, { backgroundColor: theme.colors.hairline }]}
+                accessible={false}
+                importantForAccessibility="no-hide-descendants"
+              >
+                <View
+                  style={[
+                    styles.trackFill,
+                    {
+                      width: `${milestoneProgress * 100}%`,
+                      backgroundColor: theme.colors.text,
+                    },
+                  ]}
+                />
+              </View>
+            </>
+          ) : (
+            <Text style={[styles.milestoneLine, { color: theme.colors.text }]}>
+              Every milestone reached.
+            </Text>
+          )}
+        </View>
+      </Screen>
+
+      <FAB
+        iosSymbol="waveform"
+        androidSymbol="graphic_eq"
+        label="Urge surf — ride out a craving"
+        onPress={() => router.push('/urge-surf')}
+        style={[styles.fab, { bottom: insets.bottom + spacing.md }]}
+        testID="urge-fab"
       />
 
       {celebration.celebration !== null && (
@@ -338,61 +286,83 @@ export default function HomeScreen() {
           onClose={celebration.closeShare}
         />
       )}
-    </Screen>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: {
-    flexGrow: 1,
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.xl,
+  root: { flex: 1 },
+  skelContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
   },
-  orbHero: {
-    minHeight: '38%',
+  skelOrbWrap: { alignItems: 'center' },
+  skelCenter: { alignSelf: 'center' },
+  orbZone: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing.md,
+    paddingTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
-  counter: { alignItems: 'center', marginTop: spacing.sm },
-  streakEyebrow: {
-    ...type.caption,
-    letterSpacing: 2,
+  ticker: { alignItems: 'center' },
+  tickerTime: {
+    fontSize: 28,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
-  dayNumber: {
-    fontSize: 76,
-    fontWeight: '800',
-    letterSpacing: -2,
-    lineHeight: 84,
+  tickerLabel: {
+    ...typeScale.footnote,
     marginTop: spacing.xs,
   },
-  dayCaption: { ...type.callout, marginTop: 2 },
-  counterLine: {
-    ...type.caption,
-    marginTop: spacing.xs,
-  },
-  pledgeWrap: { marginTop: spacing.lg },
-  reason: {
-    ...type.body,
-    fontStyle: 'italic',
-    textAlign: 'center',
+  cardZone: {
     marginTop: spacing.lg,
-    minHeight: 52,
     paddingHorizontal: spacing.md,
   },
-  links: { alignItems: 'center', marginTop: spacing.lg, gap: spacing.sm },
-  linkHit: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
+  cardTitle: {
+    ...typeScale.headline,
+    marginBottom: spacing.sm,
   },
-  cravingText: { ...type.body, fontWeight: '600' },
-  slipText: { ...type.callout },
-  sheetInner: { alignItems: 'center', paddingTop: spacing.sm },
-  sheetEyebrow: { ...type.caption, letterSpacing: 2, marginBottom: spacing.sm },
-  sheetTime: { ...type.title1, textAlign: 'center' },
-  sheetSub: { ...type.callout, marginTop: spacing.sm },
-  sheetBtn: { marginTop: spacing.lg, alignSelf: 'stretch' },
+  pledgeButton: { marginTop: spacing.xs },
+  pledgedLine: {
+    ...typeScale.body,
+    fontWeight: '600',
+    marginTop: spacing.xs,
+  },
+  milestoneZone: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  eyebrow: {
+    ...typeScale.footnote,
+    letterSpacing: 1.5,
+    marginBottom: spacing.sm,
+  },
+  milestoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  ringNumber: {
+    ...typeScale.subhead,
+    fontWeight: '600',
+  },
+  milestoneLine: {
+    ...typeScale.body,
+  },
+  track: {
+    height: 2,
+    borderRadius: 1,
+    marginTop: spacing.md,
+    overflow: 'hidden',
+  },
+  trackFill: {
+    height: '100%',
+    borderRadius: 1,
+  },
+  fab: {
+    position: 'absolute',
+    right: spacing.md,
+  },
 });

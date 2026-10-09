@@ -17,6 +17,12 @@ export interface OnboardingAnswers {
   dailyMinutes: number;
   /** Local "HH:MM" 24h */
   pledgeTime: string;
+  /**
+   * Optional explicit quit moment (ms epoch), picked on the onboarding
+   * date/time step. When absent, the quit starts at completion time.
+   * Callers clamp this to "now" — the future is never a valid quit date.
+   */
+  quitAtMs?: number;
 }
 
 /**
@@ -41,7 +47,7 @@ export function createQuitFromAnswers(
       answers.category === 'custom'
         ? (answers.customName ?? '').trim()
         : undefined,
-    startDate: new Date(nowMs).toISOString(),
+    startDate: new Date(answers.quitAtMs ?? nowMs).toISOString(),
     reasons,
     dailyCost: Math.max(0, answers.dailyCost),
     dailyMinutes: Math.max(0, answers.dailyMinutes),

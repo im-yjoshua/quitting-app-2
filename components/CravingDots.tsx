@@ -5,6 +5,7 @@
  * Monochrome: unselected dots are quiet (metadata numerals), the selected
  * dot is an accent ring with full-brightness text. 44pt targets.
  */
+import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -31,7 +32,10 @@ export function CravingDots({
             accessibilityRole="radio"
             accessibilityState={{ selected: active }}
             accessibilityLabel={`Craving level ${n} of 5`}
-            onPress={() => onChange(active ? null : n)}
+            onPress={() => {
+              void Haptics.selectionAsync();
+              onChange(active ? null : n);
+            }}
             style={({ pressed }) => [
               styles.dot,
               {

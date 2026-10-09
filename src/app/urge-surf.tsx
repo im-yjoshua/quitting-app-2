@@ -1,18 +1,20 @@
 /**
- * Urge Surf — the 3am feature (spec §2.3).
+ * Urge Surf — the 3am feature (v3 rebuild, plan §3.3).
  *
- * Full-screen breathing guide: in 4s / hold 4s / out 6s, 120s session.
- * The Orb (static render path) scales with the breath phases via Reanimated
- * on the UI thread. "I’m okay now" early exit after 30s — no guilt copy.
- * Completion logs to urgeSurfs; the optional craving rating also lands in
- * the journal as a check-in.
+ * Full-screen modal takeover, designed for half-open eyes: huge targets,
+ * minimal text, dark canvas. A guided breathing ring (in 4s / hold 4s /
+ * out 6s) wrapped in a 2:00 countdown ring, phase cues synced to the
+ * breath math in services/urgeSurf (read-only).
  *
- * Monochrome reskin: the Orb carries the color; everything else is white
- * type on black, minimal and calm.
+ * Flow: optional intensity check → breathing session → "You rode it out."
+ * Dismiss (close X / "I'm okay now") logs nothing and shows no guilt copy.
+ * Completion keeps the v2 contract: logUrgeSurf() + an optional journal
+ * check-in carrying the end intensity.
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { SymbolView } from 'expo-symbols';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -23,14 +25,19 @@ import {
 import Animated, {
   Easing,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 
-import { CravingDots, type CravingValue } from '../../components/CravingDots';
-import { Orb } from '../../components/Orb';
-import { GlassButton } from '../../components/glass/GlassButton';
-import { Screen } from '../../components/glass/Screen';
+import { Orb } from '../../components/orb/Orb';
+import { InvertedButton } from '../../components/ui/InvertedButton';
+import { ProgressRing } from '../../components/ui/ProgressRing';
+import { Screen } from '../../components/ui/Screen';
+import {
+  intensityDeltaCopy,
+  type IntensityValue,
+} from '../../components/ui/logic';
 import { daysCleanBefore } from '../../services/relapse';
 import {
   URGE_SURF_DURATION_S,
@@ -40,10 +47,12 @@ import {
   breathPhaseLabel,
 } from '../../services/urgeSurf';
 import { useAppState } from '../../state/AppStateContext';
-import { radii, spacing, type } from '../../theme/tokens';
+import { spacing, type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/useTheme';
 
 const TICK_S = 0.25;
+/** Breath scale — a visible inhale/exhale without being a bounce. */
+const BREATH_PEAK_SCALE = 1.16;
 
 function formatCountdown(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -51,55 +60,156 @@ function formatCountdown(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
+function IntensityDots({
+  value,
+  onChange,
+  groupLabel,
+}: {
+  value: IntensityValue;
+  onChange: (v: IntensityValue) => void;
+  groupLabel: string;
+}) {
+  const theme = useTheme();
+  const pick = (n: Exclude<IntensityValue, null>) => {
+    void Haptics.selectionAsync();
+    onChange(value === n ? null : n);
+  };
+  return (
+    <View
+      style={styles.dotsRow}
+      accessibilityRole="radiogroup"
+      accessibilityLabel={groupLabel}
+    >
+      {([1, 2, 3, 4, 5] as const).map((n) => {
+        const selected = value === n;
+        return (
+          <Pressable
+            key={n}
+            accessibilityRole="radio"
+            accessibilityLabel={`Intensity ${n} of 5`}
+            accessibilityState={{ selected }}
+            onPress={() => pick(n)}
+            style={styles.dotCell}
+          >
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: selected
+                    ? theme.colors.accent
+                    : 'transparent',
+                  borderColor: selected
+                    ? theme.colors.accent
+                    : theme.colors.hairline,
+                },
+              ]}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+function CloseButton({ onPress }: { onPress: () => void }) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Close"
+      onPress={onPress}
+      style={styles.close}
+      hitSlop={12}
+    >
+      <SymbolView
+        name="xmark"
+        size={22}
+        tintColor={theme.colors.text}
+        weight="semibold"
+      />
+    </Pressable>
+  );
+}
+
 export default function UrgeSurfScreen() {
   const theme = useTheme();
   const { state, logUrgeSurf, addJournal } = useAppState();
   const { width } = useWindowDimensions();
+  const reduceMotion = useReducedMotion();
+
+  const [screenPhase, setScreenPhase] = useState<'check' | 'session' | 'done'>(
+    'check'
+  );
+  const [startCraving, setStartCraving] = useState<IntensityValue>(null);
+  const [endCraving, setEndCraving] = useState<IntensityValue>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [craving, setCraving] = useState<CravingValue>(null);
   const [finishing, setFinishing] = useState(false);
 
-  // Derived: the session is complete once the clock runs out. No state
-  // write needed — the end screen is a pure function of `elapsed`.
   const done = elapsed >= URGE_SURF_DURATION_S;
 
-  const breathScale = useSharedValue(1);
-
-  // Session clock.
+  // Session clock — runs only during the breathing session.
   useEffect(() => {
-    if (done) return;
+    if (screenPhase !== 'session' || done) return;
     const id = setInterval(() => setElapsed((e) => e + TICK_S), TICK_S * 1000);
     return () => clearInterval(id);
-  }, [done]);
+  }, [screenPhase, done]);
 
-  // Completion fanfare (side effect only — no state writes).
+  // Session complete → celebration (side effect only — no state writes).
+  // The end screen is a pure function of `elapsed`; nothing needs to sync.
+  const celebratedRef = useRef(false);
   useEffect(() => {
-    if (done) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (done && screenPhase === 'session' && !celebratedRef.current) {
+      celebratedRef.current = true;
+      void Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success
+      );
     }
-  }, [done]);
+  }, [done, screenPhase]);
 
+  const sessionComplete =
+    screenPhase === 'done' || (screenPhase === 'session' && done);
+
+  // Breath ring follows the guided phases — UI thread only.
+  // Under Reduce Motion the ring stays static; the cue text still advances.
+  const breathScale = useSharedValue(1);
   const phase = breathPhaseAt(elapsed);
-
-  // Orb breathes with the guide — UI thread, no per-frame JS.
   useEffect(() => {
-    breathScale.value = withTiming(phase === 'out' ? 1 : 1.14, {
+    if (reduceMotion) {
+      breathScale.value = 1;
+      return;
+    }
+    breathScale.value = withTiming(phase === 'out' ? 1 : BREATH_PEAK_SCALE, {
       duration: breathPhaseDurationSec(phase) * 1000,
       easing: Easing.inOut(Easing.ease),
     });
-  }, [phase, breathScale]);
+  }, [phase, reduceMotion, breathScale]);
 
   const breathStyle = useAnimatedStyle(() => ({
     transform: [{ scale: breathScale.value }],
   }));
 
+  // Orb radiance is a slow function of the streak — "now" at render is fine.
+  // eslint-disable-next-line react-hooks/purity
+  const cleanDays = state?.quit != null ? daysCleanBefore(state.quit.startDate, Date.now()) : 0;
+
+  const ringSize = Math.min(width * 0.78, 320);
+  const orbSize = ringSize - 56;
+  const remaining = Math.max(0, Math.ceil(URGE_SURF_DURATION_S - elapsed));
+
+  const beginSession = () => {
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setScreenPhase('session');
+  };
+
+  // Completion contract (v2 parity): persist the session; the optional end
+  // intensity also lands in the journal as a check-in.
   const handleFinish = async () => {
     if (finishing) return;
     setFinishing(true);
     try {
       await logUrgeSurf();
-      if (craving !== null) {
-        await addJournal('Rode out an urge 🌊', craving);
+      if (endCraving !== null) {
+        await addJournal('Rode out an urge 🌊', endCraving);
       }
       router.back();
     } finally {
@@ -107,39 +217,67 @@ export default function UrgeSurfScreen() {
     }
   };
 
-  // Orb radiance is a slow function of the streak — "now" at render is fine.
-  // eslint-disable-next-line react-hooks/purity
-  const cleanDays = state?.quit ? daysCleanBefore(state.quit.startDate, Date.now()) : 0;
-  const orbSize = Math.min(width * 0.66, 280);
-  const remaining = Math.max(0, Math.ceil(URGE_SURF_DURATION_S - elapsed));
-  const progress = Math.min(1, elapsed / URGE_SURF_DURATION_S);
+  const deltaCopy = intensityDeltaCopy(startCraving, endCraving);
 
-  if (done) {
+  if (screenPhase === 'check') {
     return (
-      <Screen>
-        <View style={styles.wrap}>
-          <Text style={[styles.title, { color: theme.colors.text }]}>
-            You rode it out
+      <Screen edges={['top', 'left', 'right', 'bottom']}>
+        <CloseButton onPress={() => router.back()} />
+        <View style={styles.centerWrap}>
+          <Text style={[styles.checkTitle, { color: theme.colors.text }]}>
+            How strong is it?
           </Text>
-          <Text style={[styles.sub, { color: theme.colors.text }]}>
-            Urges peak and pass. This one did.
+          <Text style={[styles.meta, { color: theme.colors.metadata }]}>
+            Optional — skip anytime.
           </Text>
-          <View
-            style={[
-              styles.rateCard,
-              { backgroundColor: theme.colors.surface },
-            ]}
-          >
-            <Text style={[styles.rateLabel, { color: theme.colors.text }]}>
-              How strong was it? (optional)
-            </Text>
-            <CravingDots value={craving} onChange={setCraving} />
+          <IntensityDots
+            value={startCraving}
+            onChange={setStartCraving}
+            groupLabel="Craving intensity, optional"
+          />
+          <View style={styles.cta}>
+            <InvertedButton title="Begin breathing" onPress={beginSession} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Skip the check-in"
+              onPress={beginSession}
+              style={styles.skipLink}
+            >
+              <Text style={[styles.skipText, { color: theme.colors.accent }]}>
+                Skip
+              </Text>
+            </Pressable>
           </View>
-          <View style={styles.doneCta}>
-            <GlassButton
-              title={finishing ? 'Saving…' : 'Back home'}
+        </View>
+      </Screen>
+    );
+  }
+
+  if (screenPhase === 'done' || sessionComplete) {
+    return (
+      <Screen edges={['top', 'left', 'right', 'bottom']}>
+        <View style={styles.centerWrap}>
+          <Text style={[styles.doneTitle, { color: theme.colors.text }]}>
+            You rode it out.
+          </Text>
+          {deltaCopy !== null ? (
+            <Text style={[styles.delta, { color: theme.colors.text }]}>
+              {deltaCopy}
+            </Text>
+          ) : null}
+          <Text style={[styles.meta, { color: theme.colors.metadata }]}>
+            How does it feel now? (optional)
+          </Text>
+          <IntensityDots
+            value={endCraving}
+            onChange={setEndCraving}
+            groupLabel="Craving intensity after, optional"
+          />
+          <View style={styles.cta}>
+            <InvertedButton
+              title={finishing ? 'Saving…' : 'Done'}
               onPress={handleFinish}
-              disabled={finishing}
+              loading={finishing}
             />
           </View>
         </View>
@@ -148,58 +286,46 @@ export default function UrgeSurfScreen() {
   }
 
   return (
-    <Screen>
-      <View style={styles.wrap}>
+    <Screen edges={['top', 'left', 'right', 'bottom']}>
+      <CloseButton onPress={() => router.back()} />
+      <View style={styles.centerWrap}>
         <Text
-          style={[styles.phaseLabel, { color: theme.colors.text }]}
+          style={[styles.cue, { color: theme.colors.text }]}
           key={phase}
+          accessibilityLiveRegion="polite"
         >
           {breathPhaseLabel(phase)}
         </Text>
-        <Animated.View style={breathStyle}>
-          <Orb
-            cleanDays={cleanDays}
-            theme={state?.settings.orbTheme ?? 'dawn'}
-            size={orbSize}
-            animated={false}
-          />
-        </Animated.View>
-        <Text style={[styles.copy, { color: theme.colors.text }]}>
-          Urges peak and pass in ~20 minutes.{'\n'}Ride this one out.
-        </Text>
+        <ProgressRing progress={elapsed / URGE_SURF_DURATION_S} size={ringSize}>
+          <Animated.View style={breathStyle}>
+            <Orb cleanDays={cleanDays} size={orbSize} />
+          </Animated.View>
+        </ProgressRing>
         <Text
-          style={[styles.timer, { color: theme.colors.metadata }, styles.tabular]}
+          style={[
+            styles.timer,
+            typeScale.tabular,
+            { color: theme.colors.text },
+          ]}
         >
           {formatCountdown(remaining)}
         </Text>
-        <View
-          style={[
-            styles.progressTrack,
-            { backgroundColor: theme.colors.surface },
-          ]}
-        >
-          <View
-            style={[
-              styles.progressFill,
-              {
-                width: `${progress * 100}%`,
-                backgroundColor: theme.colors.accent,
-              },
-            ]}
-          />
-        </View>
+        <Text style={[styles.meta, { color: theme.colors.metadata }]}>
+          Urges peak and pass. Ride the wave.
+        </Text>
         {elapsed >= URGE_SURF_EARLY_EXIT_S ? (
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel="I'm okay now, end the session"
             onPress={() => router.back()}
-            style={styles.exitLink}
+            style={styles.earlyExit}
           >
-            <Text style={[styles.exitText, { color: theme.colors.accent }]}>
+            <Text style={[styles.earlyExitText, { color: theme.colors.text }]}>
               I’m okay now
             </Text>
           </Pressable>
         ) : (
-          <View style={styles.exitPlaceholder} />
+          <View style={styles.earlyExitPlaceholder} />
         )}
       </View>
     </Screen>
@@ -207,47 +333,63 @@ export default function UrgeSurfScreen() {
 }
 
 const styles = StyleSheet.create({
-  wrap: {
+  centerWrap: {
     flex: 1,
     padding: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
+    gap: spacing.lg,
   },
-  phaseLabel: { ...type.largeTitle, textAlign: 'center' },
-  copy: {
-    ...type.body,
-    textAlign: 'center',
-    lineHeight: 24,
+  close: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
   },
-  timer: { ...type.headline },
-  tabular: { ...type.tabular },
-  progressTrack: {
-    width: '60%',
-    height: 4,
-    borderRadius: 2,
-    overflow: 'hidden',
+  checkTitle: { ...typeScale.title3, textAlign: 'center' },
+  doneTitle: { ...typeScale.title1, textAlign: 'center' },
+  delta: { ...typeScale.body, textAlign: 'center' },
+  meta: { ...typeScale.footnote, textAlign: 'center' },
+  cue: { ...typeScale.title1, textAlign: 'center' },
+  timer: { ...typeScale.headline, textAlign: 'center' },
+  dotsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
-  progressFill: { height: '100%', borderRadius: 2 },
-  exitLink: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    minHeight: 44,
+  dotCell: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  exitText: { ...type.headline },
-  exitPlaceholder: { height: 52 },
-  title: { ...type.largeTitle, textAlign: 'center' },
-  sub: { ...type.body, textAlign: 'center' },
-  rateCard: {
-    width: '100%',
-    borderRadius: radii.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.md,
-    marginTop: spacing.sm,
+  dot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
   },
-  rateLabel: { ...type.headline },
-  doneCta: { width: '100%', marginTop: spacing.sm },
+  cta: {
+    width: '100%',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  skipLink: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  skipText: { ...typeScale.headline },
+  earlyExit: {
+    minHeight: 56,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  earlyExitText: { ...typeScale.headline },
+  earlyExitPlaceholder: { height: 56 },
 });
