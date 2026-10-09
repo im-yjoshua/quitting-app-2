@@ -70,8 +70,7 @@ function GlassFallback({
     <View
       style={[
         styles.fallbackHost,
-        { shadowColor: theme.colors.shadow },
-        styles.fallbackShadow,
+        { boxShadow: '0px 8px 18px rgba(0,0,0,0.18)' },
         style,
       ]}
     >
@@ -173,13 +172,6 @@ export function isNativeGlassActive(): boolean {
 const styles = StyleSheet.create({
   fallbackHost: {
     overflow: 'hidden',
-  },
-  // Layer 5 — soft drop shadow (color from tokens; geometry here).
-  fallbackShadow: {
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
   },
   fallbackContent: {
     flex: 1,

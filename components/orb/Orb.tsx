@@ -356,6 +356,8 @@ const styles = StyleSheet.create({
   number: {
     fontWeight: '700',
     // Soft lift so the count reads over the inner glow at any streak.
+    // NOTE: the modern `textShadow` prop isn't in this SDK's RN types yet —
+    // migrate when types catch up; the deprecated props still work everywhere.
     textShadowColor: 'rgba(0,0,0,0.35)',
     textShadowRadius: 6,
     textShadowOffset: { width: 0, height: 2 },

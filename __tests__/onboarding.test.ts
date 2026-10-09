@@ -111,3 +111,29 @@ describe('createAppStateFromQuit', () => {
     });
   });
 });
+
+describe('createQuitFromAnswers quit-date override', () => {
+  const NOW = Date.parse('2026-10-09T12:00:00Z');
+  const THREE_DAYS_AGO = NOW - 3 * 24 * 60 * 60 * 1000;
+
+  it('uses answers.quitAtMs for startDate when provided', () => {
+    const quit = createQuitFromAnswers(
+      { ...BASE, quitAtMs: THREE_DAYS_AGO },
+      NOW
+    );
+    expect(Date.parse(quit.startDate)).toBe(THREE_DAYS_AGO);
+  });
+
+  it('defaults startDate to nowMs when quitAtMs is absent', () => {
+    const quit = createQuitFromAnswers(BASE, NOW);
+    expect(Date.parse(quit.startDate)).toBe(NOW);
+  });
+
+  it('keeps a unique id even when quitAtMs is provided', () => {
+    const quit = createQuitFromAnswers(
+      { ...BASE, quitAtMs: THREE_DAYS_AGO },
+      NOW
+    );
+    expect(quit.id).toBe(`quit_${NOW}`);
+  });
+});

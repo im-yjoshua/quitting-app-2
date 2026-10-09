@@ -513,6 +513,7 @@ export default function OnboardingScreen() {
         dailyCost: 0,
         dailyMinutes: 0,
         pledgeTime,
+        quitAtMs,
       });
     } finally {
       setSaving(false);

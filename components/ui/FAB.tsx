@@ -52,7 +52,7 @@ export function FAB({
             height: size,
             borderRadius: size / 2,
             backgroundColor: theme.colors.accent,
-            shadowColor: theme.colors.shadow,
+            boxShadow: '0px 4px 8px rgba(0,0,0,0.3)',
           },
           style,
         ]}
@@ -73,9 +73,7 @@ const styles = StyleSheet.create({
   base: {
     alignItems: 'center',
     justifyContent: 'center',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
+    boxShadow: '0px 4px 8px rgba(0,0,0,0.3)',
     elevation: 6,
   },
   symbol: { width: 24, height: 24 },
