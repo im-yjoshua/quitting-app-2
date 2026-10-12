@@ -1,7 +1,8 @@
 /**
  * Sheet — bottom sheet for self-contained tasks (relapse flow, composers).
  *
- * Grabber visible, 1:1 drag-to-dismiss with spring settle, backdrop tap to
+ * Stitch styling: surface fill, 1px hairline rim, 20px top corners,
+ * grabber visible. 1:1 drag-to-dismiss with spring settle, backdrop tap to
  * dismiss, system-spring entrance. Under Reduce Motion the sheet cross-fades
  * instead of sliding (drag release still settles, just without travel).
  *
@@ -168,7 +169,7 @@ export function Sheet({ visible, onClose, children, dismissable = true, testID }
           style={[
             styles.panel,
             {
-              backgroundColor: theme.colors.background,
+              backgroundColor: theme.colors.surface,
               borderColor: theme.colors.hairline,
               paddingBottom: insets.bottom + spacing.md,
             },
@@ -198,8 +199,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    borderTopLeftRadius: radii.lg,
-    borderTopRightRadius: radii.lg,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderRightWidth: StyleSheet.hairlineWidth,

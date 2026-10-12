@@ -101,25 +101,25 @@ describe('ringAngles', () => {
 
 describe('v3 token invariants', () => {
   it('accent is the v3 violet, confined to accent roles', () => {
-    expect(dark.colors.accent).toBe('#BF5AF2');
-    expect(light.colors.accent).toBe('#BF5AF2');
+    expect(dark.colors.accent).toBe('#a78bfa');
+    expect(light.colors.accent).toBe('#a78bfa');
   });
 
   it('canvas is pure black / pure white', () => {
-    expect(dark.colors.background).toBe('#000000');
+    expect(dark.colors.background).toBe('#09090b');
     expect(light.colors.background).toBe('#FFFFFF');
-    expect(dark.colors.text).toBe('#FFFFFF');
-    expect(light.colors.text).toBe('#000000');
+    expect(dark.colors.text).toBe('#fafafa');
+    expect(light.colors.text).toBe('#09090b');
   });
 
   it('the one grey is reserved for grouped cards + inputs', () => {
-    expect(dark.colors.surface).toBe('#1C1C1E');
+    expect(dark.colors.surface).toBe('#18181b');
     expect(light.colors.surface).toBe('#F2F2F7');
   });
 
   it('inverted primaries are the inverse canvas', () => {
-    expect(dark.colors.inverted).toBe('#FFFFFF');
-    expect(light.colors.inverted).toBe('#000000');
+    expect(dark.colors.inverted).toBe('#fafafa');
+    expect(light.colors.inverted).toBe('#09090b');
   });
 
   it('standard spring is damping 18 / stiffness 200', () => {

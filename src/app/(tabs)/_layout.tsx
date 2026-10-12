@@ -7,6 +7,8 @@
  * native bottom bar. SF Symbols on iOS (`sf`), Material Symbols on Android
  * (`md`) — both resolved through expo-symbols, no new native deps.
  * Active indicator = sovereign violet (the accent's sanctioned home).
+ * Icon set follows the Stitch reference: shield for Home, bar chart for
+ * Stats, book for Journal, person for You.
  */
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
@@ -29,7 +31,8 @@ export default function TabsLayout() {
       backgroundColor={theme.colors.background}
     >
       <NativeTabs.Trigger name="index">
-        <NativeTabs.Trigger.Icon sf="house.fill" md="home" />
+        {/* Reference home tab = shield, not house. */}
+        <NativeTabs.Trigger.Icon sf="shield.fill" md="shield" />
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="stats">

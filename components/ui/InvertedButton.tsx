@@ -1,9 +1,11 @@
 /**
- * InvertedButton — the full-width primary action.
+ * InvertedButton — the full-width primary action (Stitch).
  *
- * Inverted monochrome fill (white/black on dark, black/white on light) —
- * never the accent. This is the highest-contrast element on screen, which
- * is what a primary action should be. 50pt tall, radius 12, Semibold label.
+ * Inverted fill (near-white #fafafa on dark, near-black on light) — the
+ * reference's white pill CTA ("Continue →", "Begin Again Today →",
+ * "I Made It Through"). This is the highest-contrast element on screen,
+ * which is what a primary action should be. FULLY ROUNDED pill, 50pt
+ * tall, Semibold label. For the violet CTA use AccentButton.
  */
 import React from 'react';
 import {
@@ -74,7 +76,7 @@ export function InvertedButton({
 const styles = StyleSheet.create({
   button: {
     minHeight: 50,
-    borderRadius: radii.md,
+    borderRadius: radii.pill,
     paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',

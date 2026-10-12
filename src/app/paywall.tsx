@@ -1,9 +1,10 @@
 /**
- * Paywall — the REAL RevenueCat paywall (Phase 7 v3 reskin, plan §3.8).
+ * Paywall — the REAL RevenueCat paywall (Phase 6, plan §2.8 + §3.1).
  *
  * PRESENTATION ONLY — every line of logic below is the v2 paywall, untouched:
- * - 3 tiers: Weekly $3.99 / Monthly $9.99 / Yearly $29.99 hero. Products map
- *   to ONE entitlement (`sovereign_tier`, offering `default`) in RevenueCat.
+ * - 3 tiers: Yearly $29.99 / Monthly $9.99 / Weekly $3.99 hero order per
+ *   Stitch. Products map to ONE entitlement (`sovereign_tier`, offering
+ *   `default`) in RevenueCat.
  * - API keys come ONLY from env (`EXPO_PUBLIC_REVENUECAT_APPLE_KEY` /
  *   `EXPO_PUBLIC_REVENUECAT_GOOGLE_KEY`) — nothing is hardcoded.
  * - `__DEV__` simulation ONLY: when RevenueCat isn't configured in a dev
@@ -12,15 +13,18 @@
  *   purchase always goes through real RevenueCat, never a fake grant.
  * - No-key production state: honest copy — purchases activate at launch,
  *   the free quitting loop stays free forever.
- * - Close is always visible. Restore purchases always available.
+ * - NO free trial (plan §3.1): Stitch's "3-day free trial / Start Free
+ *   Trial" is forbidden. CTA is "Continue →".
+ * - Close is always visible. Restore purchases always available (header
+ *   left + bottom row, per Stitch).
  * - Terms of Use (Apple's standard EULA) + Privacy Policy links on the
  *   paywall itself (App Store Guideline requirement).
  * - The auto-renewal disclosure (issue #8) is preserved VERBATIM — the
  *   DISCLOSURE constant below is character-for-character the v2 text.
  *
- * v3 presentation: Orb glow hero, "Go deeper. Stay free longer.", checkmark
- * unlock list, 3 tier cards (yearly = hero with BEST VALUE tag), inverted
- * Continue.
+ * v4 presentation (Stitch): Restore + X header, glowing sphere orb with ∞,
+ * "SOVEREIGN PRO" pill, "Go deeper. Stay free longer.", honest feature
+ * checklist card, 3 tier cards (yearly hero first), white Continue pill.
  */
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -36,7 +40,7 @@ import {
   View,
 } from 'react-native';
 
-import { OrbGlow } from '../../components/orb/OrbGlow';
+import { Orb } from '../../components/orb';
 import { InvertedButton, Screen } from '../../components/ui';
 import { PRIVACY_POLICY_URL } from '../../constants';
 import { usePremium } from '../../hooks/usePremium';
@@ -47,6 +51,7 @@ import {
 } from '../../services/purchases';
 import { radii, spacing, type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/useTheme';
+import type { Theme } from '../../theme/tokens';
 import type { PurchasePlan } from '../../types/app';
 
 interface Tier {
@@ -54,27 +59,61 @@ interface Tier {
   name: string;
   price: string;
   note: string;
+  tag?: string;
   hero?: boolean;
 }
 
 const TIERS: Tier[] = [
-  { plan: 'weekly', name: 'Weekly', price: '$3.99', note: 'per week' },
-  { plan: 'monthly', name: 'Monthly', price: '$9.99', note: 'per month' },
   {
     plan: 'yearly',
     name: 'Yearly',
     price: '$29.99',
     note: 'per year — less than $2.50/month',
+    tag: 'Best value',
     hero: true,
   },
+  { plan: 'monthly', name: 'Monthly', price: '$9.99', note: 'per month' },
+  { plan: 'weekly', name: 'Weekly', price: '$3.99', note: 'per week' },
 ];
 
-const UNLOCKS = [
-  'Unlimited voice journaling',
-  'Advanced stats: projections & per-day charts',
-  'Orb themes: Ember & Tide',
-  'Noir share-card styles',
-  'Smart reminders & data export',
+interface Unlock {
+  title: string;
+  subtitle: string;
+  ios: string;
+  android: string;
+}
+
+const UNLOCKS: Unlock[] = [
+  {
+    title: 'Voice journaling',
+    subtitle: 'Record spoken reflections as audio entries',
+    ios: 'mic.fill',
+    android: 'mic',
+  },
+  {
+    title: 'Advanced stats',
+    subtitle: 'Projections and per-day breakdowns',
+    ios: 'chart.bar.fill',
+    android: 'bar_chart',
+  },
+  {
+    title: 'Orb themes',
+    subtitle: 'Ember and Tide glow styles',
+    ios: 'paintpalette.fill',
+    android: 'palette',
+  },
+  {
+    title: 'Noir share cards',
+    subtitle: 'High-contrast milestone cards',
+    ios: 'rectangle.stack.fill',
+    android: 'photo_library',
+  },
+  {
+    title: 'Smart reminders & export',
+    subtitle: 'Extra nudges plus your recovery data, portable',
+    ios: 'bell.fill',
+    android: 'notifications',
+  },
 ];
 
 const APPLE_STANDARD_EULA =
@@ -91,6 +130,45 @@ const DISCLOSURE =
   'renewal within 24 hours of period end. Manage or cancel anytime ' +
   'in Settings. The core quitting loop — counter, pledge, relapse ' +
   'flow, urge surf — stays free forever.';
+
+/** Small SF-Symbol / Material-Symbol icon (no new native deps). */
+function Icon({
+  ios,
+  android,
+  size = 18,
+  color,
+}: {
+  ios: string;
+  android: string;
+  size?: number;
+  color: string;
+}) {
+  return (
+    <SymbolView
+      name={{ ios: ios as never, android: android as never }}
+      tintColor={color}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
+/** Rounded icon tile, Stitch-style. */
+function IconTile({
+  theme,
+  ios,
+  android,
+}: {
+  theme: Theme;
+  ios: string;
+  android: string;
+}) {
+  const c = theme.colors;
+  return (
+    <View style={[styles.iconTile, { backgroundColor: c.accentSoft }]}>
+      <Icon ios={ios} android={android} size={18} color={c.accent} />
+    </View>
+  );
+}
 
 export default function PaywallScreen() {
   const theme = useTheme();
@@ -177,12 +255,24 @@ export default function PaywallScreen() {
   return (
     <Screen scrollable scrollContentStyle={styles.content}>
       <View style={styles.topBar}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Restore purchases"
+          onPress={handleRestore}
+          disabled={restoring}
+          style={styles.restoreTop}
+          hitSlop={8}
+        >
+          <Text style={[styles.restoreTopText, { color: c.metadata }]}>
+            {restoring ? 'Restoring…' : 'Restore'}
+          </Text>
+        </Pressable>
         <View style={styles.topSpacer} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close"
           onPress={() => router.back()}
-          style={styles.close}
+          style={[styles.close, { backgroundColor: c.surface }]}
           hitSlop={8}
         >
           <SymbolView name="xmark" tintColor={c.text} style={styles.closeIcon} />
@@ -198,11 +288,31 @@ export default function PaywallScreen() {
       )}
 
       <View style={styles.hero}>
-        <OrbGlow size={88} />
+        <Orb
+          cleanDays={0}
+          size={128}
+          accessibilityLabel="Sovereign Pro"
+          centerContent={
+            <Text style={[styles.infinity, { color: c.text }]}>∞</Text>
+          }
+        />
       </View>
-      <Text style={[styles.kicker, { color: c.metadata }]}>SOVEREIGN</Text>
+
+      <View style={styles.pillRow}>
+        <View style={[styles.proPill, { backgroundColor: c.surface, borderColor: c.hairline }]}>
+          <View style={[styles.proDot, { backgroundColor: c.success }]} />
+          <Text style={[styles.proPillText, { color: c.text }]}>
+            SOVEREIGN PRO
+          </Text>
+        </View>
+      </View>
+
       <Text style={[styles.title, { color: c.text }]}>
-        Go deeper.{'\n'}Stay free longer.
+        Go deeper. Stay free longer.
+      </Text>
+      <Text style={[styles.subcopy, { color: c.metadata }]}>
+        Voice journaling, deeper stats, custom orb themes, and more — built
+        for the long road.
       </Text>
 
       {isPremium ? (
@@ -221,11 +331,27 @@ export default function PaywallScreen() {
         </View>
       ) : (
         <>
-          <View style={styles.unlocks}>
-            {UNLOCKS.map((u) => (
-              <View key={u} style={styles.unlockRow}>
-                <Text style={[styles.check, { color: c.success }]}>✓</Text>
-                <Text style={[styles.unlockText, { color: c.text }]}>{u}</Text>
+          <View style={[styles.checklist, { backgroundColor: c.surface }]}>
+            {UNLOCKS.map((u, i) => (
+              <View
+                key={u.title}
+                style={[
+                  styles.unlockRow,
+                  i < UNLOCKS.length - 1 && {
+                    borderBottomWidth: 1,
+                    borderBottomColor: c.hairline,
+                  },
+                ]}
+              >
+                <IconTile theme={theme} ios={u.ios} android={u.android} />
+                <View style={styles.unlockTextWrap}>
+                  <Text style={[styles.unlockTitle, { color: c.text }]}>
+                    {u.title}
+                  </Text>
+                  <Text style={[styles.unlockSub, { color: c.metadata }]}>
+                    {u.subtitle}
+                  </Text>
+                </View>
               </View>
             ))}
           </View>
@@ -249,48 +375,10 @@ export default function PaywallScreen() {
                     styles.tier,
                     {
                       backgroundColor: active ? c.accentSoft : c.surface,
-                      borderColor: active || t.hero ? c.accent : 'transparent',
-                    },
-                    t.hero && {
-                      shadowColor: c.accent,
-                      shadowOpacity: 0.35,
-                      shadowRadius: 16,
-                      shadowOffset: { width: 0, height: 4 },
-                      elevation: 8,
+                      borderColor: active ? c.accent : c.hairline,
                     },
                   ]}
                 >
-                  <View style={styles.tierText}>
-                    <View style={styles.tierNameRow}>
-                      <Text style={[styles.tierName, { color: c.text }]}>
-                        {t.name}
-                      </Text>
-                      {t.hero ? (
-                        <View
-                          style={[
-                            styles.heroTag,
-                            { backgroundColor: c.accentSoft },
-                          ]}
-                        >
-                          <Text
-                            // Full-brightness label: violet-on-wash falls
-                            // below 4.5:1 in light mode at 12pt.
-                            style={[styles.heroTagText, { color: c.text }]}
-                          >
-                            BEST VALUE
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                    <Text style={[styles.tierNote, { color: c.metadata }]}>
-                      {t.note}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[styles.tierPrice, { color: c.text }, styles.tabular]}
-                  >
-                    {t.price}
-                  </Text>
                   <View
                     style={[
                       styles.radio,
@@ -306,6 +394,32 @@ export default function PaywallScreen() {
                       </Text>
                     )}
                   </View>
+                  <View style={styles.tierText}>
+                    <View style={styles.tierNameRow}>
+                      <Text style={[styles.tierName, { color: c.text }]}>
+                        {t.name}
+                      </Text>
+                      {t.tag ? (
+                        <View
+                          style={[styles.heroTag, { backgroundColor: c.accent }]}
+                        >
+                          <Text
+                            style={[styles.heroTagText, { color: c.onAccent }]}
+                          >
+                            {t.tag}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    <Text style={[styles.tierNote, { color: c.metadata }]}>
+                      {t.note}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.tierPrice, { color: c.text }, styles.tabular]}
+                  >
+                    {t.price}
+                  </Text>
                 </View>
               </Pressable>
             );
@@ -328,32 +442,29 @@ export default function PaywallScreen() {
               </Text>
             ) : (
               <InvertedButton
-                title={simulated ? 'Continue (simulated)' : 'Continue'}
+                title={simulated ? 'Continue (simulated)' : 'Continue →'}
                 onPress={handlePurchase}
                 loading={busy}
               />
             )}
           </View>
-
-          <Text style={[styles.finePrint, { color: c.metadata }]}>
-            {DISCLOSURE}
-          </Text>
         </>
       )}
 
-      <Pressable
-        accessibilityRole="button"
-        onPress={handleRestore}
-        style={styles.restore}
-        disabled={restoring}
-        hitSlop={8}
-      >
-        <Text style={[styles.restoreText, { color: c.accent }]}>
-          {restoring ? 'Restoring…' : 'Restore purchases'}
-        </Text>
-      </Pressable>
-
       <View style={styles.legalRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Restore purchases"
+          onPress={handleRestore}
+          disabled={restoring}
+          style={styles.legalLink}
+          hitSlop={8}
+        >
+          <Text style={[styles.legalText, { color: c.metadata }]}>
+            Restore Purchases
+          </Text>
+        </Pressable>
+        <Text style={[styles.legalDot, { color: c.metadata }]}>·</Text>
         <Pressable
           accessibilityRole="link"
           onPress={() => void Linking.openURL(APPLE_STANDARD_EULA)}
@@ -361,7 +472,7 @@ export default function PaywallScreen() {
           hitSlop={8}
         >
           <Text style={[styles.legalText, { color: c.metadata }]}>
-            Terms of Use
+            Terms of Service
           </Text>
         </Pressable>
         <Text style={[styles.legalDot, { color: c.metadata }]}>·</Text>
@@ -376,6 +487,10 @@ export default function PaywallScreen() {
           </Text>
         </Pressable>
       </View>
+
+      <Text style={[styles.finePrint, { color: c.metadata }]}>
+        {DISCLOSURE}
+      </Text>
     </Screen>
   );
 }
@@ -387,14 +502,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: spacing.sm,
   },
-  topSpacer: { flex: 1 },
-  close: {
+  restoreTop: {
     minWidth: 44,
     minHeight: 44,
+    justifyContent: 'center',
+  },
+  restoreTopText: { ...typeScale.headline },
+  topSpacer: { flex: 1 },
+  close: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  closeIcon: { width: 20, height: 20 },
+  closeIcon: { width: 16, height: 16 },
   simBanner: {
     borderRadius: radii.md,
     padding: spacing.sm,
@@ -405,21 +527,58 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
-  hero: { alignItems: 'center', marginTop: spacing.lg, marginBottom: spacing.md },
-  kicker: {
-    ...typeScale.footnote,
-    letterSpacing: 4,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
+  hero: { alignItems: 'center', marginTop: spacing.md, marginBottom: spacing.md },
+  infinity: { fontSize: 40, fontWeight: '300' },
+  pillRow: { alignItems: 'center', marginBottom: spacing.md },
+  proPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
   },
-  title: { ...typeScale.largeTitle, textAlign: 'center', marginBottom: spacing.lg },
-  unlocks: { gap: spacing.sm, marginBottom: spacing.lg },
-  unlockRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  check: { ...typeScale.headline, fontWeight: '700' },
-  unlockText: { ...typeScale.body, flex: 1 },
+  proDot: { width: 7, height: 7, borderRadius: 3.5 },
+  proPillText: {
+    ...typeScale.footnote,
+    fontWeight: '700',
+    letterSpacing: 2,
+  },
+  title: { ...typeScale.title1, textAlign: 'center', marginBottom: spacing.sm },
+  subcopy: {
+    ...typeScale.body,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+  },
+  checklist: {
+    borderRadius: radii.lg,
+    overflow: 'hidden',
+    marginBottom: spacing.lg,
+  },
+  unlockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    minHeight: 64,
+  },
+  unlockTextWrap: { flex: 1, gap: 2 },
+  unlockTitle: { ...typeScale.headline },
+  unlockSub: { ...typeScale.footnote },
+  iconTile: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tier: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     padding: spacing.md,
     marginBottom: spacing.sm,
     borderRadius: radii.lg,
@@ -434,12 +593,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
   },
   heroTagText: {
-    ...typeScale.footnote,
+    ...typeScale.caption,
     fontWeight: '700',
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   tierNote: { ...typeScale.footnote },
-  tierPrice: { ...typeScale.headline, marginRight: spacing.sm },
+  tierPrice: { ...typeScale.headline },
   tabular: { ...typeScale.tabular },
   radio: {
     width: 24,
@@ -474,31 +633,22 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: spacing.lg,
   },
-  finePrint: {
-    ...typeScale.footnote,
-    textAlign: 'center',
-    marginTop: spacing.md,
-    paddingHorizontal: spacing.md,
-    lineHeight: 18,
-  },
-  restore: {
-    alignSelf: 'center',
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    marginTop: spacing.sm,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  restoreText: { ...typeScale.headline },
   legalRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.sm,
-    marginTop: spacing.sm,
+    marginTop: spacing.lg,
   },
-  legalLink: { paddingVertical: spacing.sm },
+  legalLink: { paddingVertical: spacing.sm, minHeight: 44, justifyContent: 'center' },
   legalText: { ...typeScale.footnote },
   legalDot: { ...typeScale.footnote },
+  finePrint: {
+    ...typeScale.footnote,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    lineHeight: 18,
+  },
   pressed: { opacity: 0.7 },
 });

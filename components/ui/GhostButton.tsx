@@ -1,8 +1,9 @@
 /**
- * GhostButton — the quiet secondary action.
+ * GhostButton — the quiet secondary action (Stitch).
  *
- * Hairline outline, transparent fill, full-brightness label. For actions
- * that shouldn't shout ("I pledge today" before pledging, "Not now").
+ * 1px hairline outline, transparent fill, full-brightness label — the
+ * reference's secondary actions ("View oath >" chip pattern). For actions
+ * that shouldn't shout. 50pt tall, 44pt minimum touch target.
  */
 import React from 'react';
 import {

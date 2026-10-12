@@ -77,3 +77,10 @@ notification color).
 green · expo start boots, entry HTTP 200, no errors.
 
 **Verdict:** all findings closed. Nothing outstanding.
+
+## 2026-10-09 — v3 "Obsidian" rebuild QA (merge 97f9479)
+9-phase presentation rebuild on v3-redesign, merged to main after QA.
+- Verified: tsc clean, expo lint clean, 227/227 tests (17 suites), expo-doctor 21/21, boot HTTP 200.
+- QA findings fixed: (1) onboarding quit-date drums discarded — threaded optional quitAtMs through OnboardingAnswers (commit 2c245e0, +3 tests); (2) deprecated shadow props — migrated to boxShadow; textShadow kept on legacy props (absent from SDK 57 RN types).
+- Contract checks: zero hex literals in components, #8 paywall disclosure verbatim, zero shame words in relapse flow, legacy Orb.tsx retained (used by ShareCard/CelebrationSheet).
+- Open for device pass: Liquid Glass rendering, haptics feel, VoiceOver traversal, AX5 layout, Orb caption contrast.

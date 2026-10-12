@@ -48,6 +48,14 @@ interface OrbProps {
    * The stage (glow bleed) is 1.5× the diameter.
    */
   size?: number;
+  /**
+   * Replaces the center day-count ("47 / days clean") with custom content —
+   * e.g. the infinity mark on the onboarding welcome screen. The content
+   * breathes with the sphere as one object, like the default.
+   */
+  centerContent?: React.ReactNode;
+  /** Overrides the outer image label (default: "N days clean"). */
+  accessibilityLabel?: string;
   testID?: string;
 }
 
@@ -96,7 +104,13 @@ function toGray(hex: string): string {
   return rgbToHex(lum, lum, lum);
 }
 
-export function Orb({ cleanDays, size, testID }: OrbProps) {
+export function Orb({
+  cleanDays,
+  size,
+  centerContent,
+  accessibilityLabel,
+  testID,
+}: OrbProps) {
   const { width, height } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
 
@@ -152,7 +166,7 @@ export function Orb({ cleanDays, size, testID }: OrbProps) {
       style={[styles.stage, stageStyle]}
       accessible
       accessibilityRole="image"
-      accessibilityLabel={`${days} ${dayWord} clean`}
+      accessibilityLabel={accessibilityLabel ?? `${days} ${dayWord} clean`}
       testID={testID}
     >
       {/* Glow bleed — opacity grows with the streak */}
@@ -281,30 +295,34 @@ export function Orb({ cleanDays, size, testID }: OrbProps) {
           </View>
         </GlassView>
         {/* Center content — the thing the user came to read. Breathes with
-            the sphere as one object; hidden from VoiceOver (outer label). */}
+            the sphere as one object; hidden from VoiceOver (outer label).
+            Callers can replace the day count (e.g. onboarding's ∞). */}
         <View
           accessible={false}
           importantForAccessibility="no-hide-descendants"
           style={[styles.centerContent, StyleSheet.absoluteFill]}
         >
-          <Text
-            style={[
-              styles.number,
-              typeScale.tabular,
-              { fontSize: diameter * NUMBER_FONT_RATIO, color: dark.colors.onAccent },
-            ]}
-          >
-            {days}
-          </Text>
-          <Text
-            style={[
-              styles.caption,
-              { fontSize: typeScale.subhead.fontSize, color: dark.colors.onAccent },
-            ]}
-          >
-            {dayWord} clean
-          </Text>
-        </View>
+          {centerContent ?? (
+            <>
+              <Text
+                style={[
+                  styles.number,
+                  typeScale.tabular,
+                  { fontSize: diameter * NUMBER_FONT_RATIO, color: dark.colors.onAccent },
+                ]}
+              >
+                {days}
+              </Text>
+              <Text
+                style={[
+                  styles.caption,
+                  { fontSize: typeScale.subhead.fontSize, color: dark.colors.onAccent },
+                ]}
+              >
+                {dayWord} clean
+              </Text>
+            </>
+          )}        </View>
       </Animated.View>
     </View>
   );

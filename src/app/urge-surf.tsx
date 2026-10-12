@@ -1,15 +1,20 @@
 /**
- * Urge Surf — the 3am feature (v3 rebuild, plan §3.3).
+ * Urge Surf — Stitch v4 rebuild ("Emergency Panic Sos", plan §2.3).
  *
- * Full-screen modal takeover, designed for half-open eyes: huge targets,
- * minimal text, dark canvas. A guided breathing ring (in 4s / hold 4s /
- * out 6s) wrapped in a 2:00 countdown ring, phase cues synced to the
- * breath math in services/urgeSurf (read-only).
+ * Single-screen emergency surface: header (back chevron / avatar), a violet
+ * arc ring counting the session down, breath-phase cues synced to the breath
+ * math in services/urgeSurf (read-only), a timer pill, the "Surfing the
+ * Wave" education card (honest copy — no invented claims), and the white
+ * pill "I Made It Through (Log Craving)" + "+2 min" text button.
  *
- * Flow: optional intensity check → breathing session → "You rode it out."
- * Dismiss (close X / "I'm okay now") logs nothing and shows no guilt copy.
- * Completion keeps the v2 contract: logUrgeSurf() + an optional journal
- * check-in carrying the end intensity.
+ * Contracts preserved from v3:
+ * - Dismiss (back chevron) logs nothing — no guilt copy.
+ * - The pill calls logUrgeSurf() then goes back (the v2 completion contract).
+ * - The "Ambient: Deep Drone 528Hz" card is dropped — we have no audio
+ *   (plan §3.5). The optional intensity check-in was simplified away to
+ *   match the single-screen reference.
+ * - Reduce Motion: the ring stays static; phase cues and the timer still
+ *   advance. No translucent fills (Reduce Transparency).
  */
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -30,29 +35,35 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { Orb } from '../../components/orb/Orb';
 import { InvertedButton } from '../../components/ui/InvertedButton';
 import { ProgressRing } from '../../components/ui/ProgressRing';
 import { Screen } from '../../components/ui/Screen';
 import {
-  intensityDeltaCopy,
-  type IntensityValue,
-} from '../../components/ui/logic';
-import { daysCleanBefore } from '../../services/relapse';
-import {
   URGE_SURF_DURATION_S,
-  URGE_SURF_EARLY_EXIT_S,
   breathPhaseAt,
   breathPhaseDurationSec,
-  breathPhaseLabel,
+  type BreathPhase,
 } from '../../services/urgeSurf';
-import { useAppState } from '../../state/AppStateContext';
-import { spacing, type as typeScale } from '../../theme/tokens';
+import { radii, spacing, type as typeScale } from '../../theme/tokens';
 import { useTheme } from '../../theme/useTheme';
+import { useAppState } from '../../state/AppStateContext';
 
 const TICK_S = 0.25;
-/** Breath scale — a visible inhale/exhale without being a bounce. */
-const BREATH_PEAK_SCALE = 1.16;
+/** Extra session time granted per tap of "I need more time". */
+const EXTEND_S = 120;
+/** Gentle breath swell on the ring — calmer than v3's orb bounce. */
+const BREATH_PEAK_SCALE = 1.06;
+
+/**
+ * Phase cues from the reference. `services/urgeSurf` owns the timing;
+ * presentation owns the words (the plan's cues: Breathe in… / Hold… /
+ * Release…). The sub-lines are neutral instructions, not claims.
+ */
+const PHASE_COPY: Record<BreathPhase, { cue: string; sub: string }> = {
+  in: { cue: 'Breathe in…', sub: 'Inhale through nose' },
+  hold: { cue: 'Hold…', sub: 'Float at the peak' },
+  out: { cue: 'Release', sub: 'Slow exhale through mouth' },
+};
 
 function formatCountdown(totalSeconds: number): string {
   const m = Math.floor(totalSeconds / 60);
@@ -60,119 +71,65 @@ function formatCountdown(totalSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function IntensityDots({
-  value,
-  onChange,
-  groupLabel,
+function Icon({
+  ios,
+  android,
+  size,
+  color,
+  weight,
 }: {
-  value: IntensityValue;
-  onChange: (v: IntensityValue) => void;
-  groupLabel: string;
+  ios: string;
+  android: string;
+  size?: number;
+  color: string;
+  weight?: 'regular' | 'semibold' | 'bold';
 }) {
-  const theme = useTheme();
-  const pick = (n: Exclude<IntensityValue, null>) => {
-    void Haptics.selectionAsync();
-    onChange(value === n ? null : n);
-  };
   return (
-    <View
-      style={styles.dotsRow}
-      accessibilityRole="radiogroup"
-      accessibilityLabel={groupLabel}
-    >
-      {([1, 2, 3, 4, 5] as const).map((n) => {
-        const selected = value === n;
-        return (
-          <Pressable
-            key={n}
-            accessibilityRole="radio"
-            accessibilityLabel={`Intensity ${n} of 5`}
-            accessibilityState={{ selected }}
-            onPress={() => pick(n)}
-            style={styles.dotCell}
-          >
-            <View
-              style={[
-                styles.dot,
-                {
-                  backgroundColor: selected
-                    ? theme.colors.accent
-                    : 'transparent',
-                  borderColor: selected
-                    ? theme.colors.accent
-                    : theme.colors.hairline,
-                },
-              ]}
-            />
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function CloseButton({ onPress }: { onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel="Close"
-      onPress={onPress}
-      style={styles.close}
-      hitSlop={12}
-    >
-      <SymbolView
-        name="xmark"
-        size={22}
-        tintColor={theme.colors.text}
-        weight="semibold"
-      />
-    </Pressable>
+    <SymbolView
+      name={{ ios: ios as never, android: android as never }}
+      tintColor={color}
+      weight={weight}
+      style={{ width: size, height: size }}
+    />
   );
 }
 
 export default function UrgeSurfScreen() {
   const theme = useTheme();
-  const { state, logUrgeSurf, addJournal } = useAppState();
+  const c = theme.colors;
   const { width } = useWindowDimensions();
   const reduceMotion = useReducedMotion();
+  const { logUrgeSurf } = useAppState();
 
-  const [screenPhase, setScreenPhase] = useState<'check' | 'session' | 'done'>(
-    'check'
-  );
-  const [startCraving, setStartCraving] = useState<IntensityValue>(null);
-  const [endCraving, setEndCraving] = useState<IntensityValue>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [extraSeconds, setExtraSeconds] = useState(0);
   const [finishing, setFinishing] = useState(false);
 
-  const done = elapsed >= URGE_SURF_DURATION_S;
+  const total = URGE_SURF_DURATION_S + extraSeconds;
+  const done = elapsed >= total;
+  const remaining = Math.max(0, Math.ceil(total - elapsed));
 
-  // Session clock — runs only during the breathing session.
+  // Session clock.
   useEffect(() => {
-    if (screenPhase !== 'session' || done) return;
+    if (done) return;
     const id = setInterval(() => setElapsed((e) => e + TICK_S), TICK_S * 1000);
     return () => clearInterval(id);
-  }, [screenPhase, done]);
+  }, [done]);
 
-  // Session complete → celebration (side effect only — no state writes).
-  // The end screen is a pure function of `elapsed`; nothing needs to sync.
+  // Session complete → haptic only; the pill still does the logging.
   const celebratedRef = useRef(false);
   useEffect(() => {
-    if (done && screenPhase === 'session' && !celebratedRef.current) {
+    if (done && !celebratedRef.current) {
       celebratedRef.current = true;
-      void Haptics.notificationAsync(
-        Haptics.NotificationFeedbackType.Success
-      );
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
-  }, [done, screenPhase]);
+  }, [done]);
 
-  const sessionComplete =
-    screenPhase === 'done' || (screenPhase === 'session' && done);
-
-  // Breath ring follows the guided phases — UI thread only.
-  // Under Reduce Motion the ring stays static; the cue text still advances.
+  // Breath swell follows the guided phases — UI thread only.
+  // Under Reduce Motion the ring stays static; cues and timer advance.
   const breathScale = useSharedValue(1);
   const phase = breathPhaseAt(elapsed);
+  const copy = PHASE_COPY[phase];
   useEffect(() => {
     if (reduceMotion) {
       breathScale.value = 1;
@@ -188,208 +145,267 @@ export default function UrgeSurfScreen() {
     transform: [{ scale: breathScale.value }],
   }));
 
-  // Orb radiance is a slow function of the streak — "now" at render is fine.
-  // eslint-disable-next-line react-hooks/purity
-  const cleanDays = state?.quit != null ? daysCleanBefore(state.quit.startDate, Date.now()) : 0;
+  const ringSize = Math.min(width * 0.82, 340);
+  const dotIndex = phase === 'in' ? 0 : phase === 'hold' ? 1 : 2;
 
-  const ringSize = Math.min(width * 0.78, 320);
-  const orbSize = ringSize - 56;
-  const remaining = Math.max(0, Math.ceil(URGE_SURF_DURATION_S - elapsed));
-
-  const beginSession = () => {
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setScreenPhase('session');
-  };
-
-  // Completion contract (v2 parity): persist the session; the optional end
-  // intensity also lands in the journal as a check-in.
   const handleFinish = async () => {
     if (finishing) return;
     setFinishing(true);
     try {
       await logUrgeSurf();
-      if (endCraving !== null) {
-        await addJournal('Rode out an urge 🌊', endCraving);
-      }
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
     } finally {
       setFinishing(false);
     }
   };
 
-  const deltaCopy = intensityDeltaCopy(startCraving, endCraving);
-
-  if (screenPhase === 'check') {
-    return (
-      <Screen edges={['top', 'left', 'right', 'bottom']}>
-        <CloseButton onPress={() => router.back()} />
-        <View style={styles.centerWrap}>
-          <Text style={[styles.checkTitle, { color: theme.colors.text }]}>
-            How strong is it?
-          </Text>
-          <Text style={[styles.meta, { color: theme.colors.metadata }]}>
-            Optional — skip anytime.
-          </Text>
-          <IntensityDots
-            value={startCraving}
-            onChange={setStartCraving}
-            groupLabel="Craving intensity, optional"
-          />
-          <View style={styles.cta}>
-            <InvertedButton title="Begin breathing" onPress={beginSession} />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Skip the check-in"
-              onPress={beginSession}
-              style={styles.skipLink}
-            >
-              <Text style={[styles.skipText, { color: theme.colors.accent }]}>
-                Skip
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-      </Screen>
-    );
-  }
-
-  if (screenPhase === 'done' || sessionComplete) {
-    return (
-      <Screen edges={['top', 'left', 'right', 'bottom']}>
-        <View style={styles.centerWrap}>
-          <Text style={[styles.doneTitle, { color: theme.colors.text }]}>
-            You rode it out.
-          </Text>
-          {deltaCopy !== null ? (
-            <Text style={[styles.delta, { color: theme.colors.text }]}>
-              {deltaCopy}
-            </Text>
-          ) : null}
-          <Text style={[styles.meta, { color: theme.colors.metadata }]}>
-            How does it feel now? (optional)
-          </Text>
-          <IntensityDots
-            value={endCraving}
-            onChange={setEndCraving}
-            groupLabel="Craving intensity after, optional"
-          />
-          <View style={styles.cta}>
-            <InvertedButton
-              title={finishing ? 'Saving…' : 'Done'}
-              onPress={handleFinish}
-              loading={finishing}
-            />
-          </View>
-        </View>
-      </Screen>
-    );
-  }
+  const handleExtend = () => {
+    void Haptics.selectionAsync();
+    setExtraSeconds((e) => e + EXTEND_S);
+  };
 
   return (
-    <Screen edges={['top', 'left', 'right', 'bottom']}>
-      <CloseButton onPress={() => router.back()} />
-      <View style={styles.centerWrap}>
-        <Text
-          style={[styles.cue, { color: theme.colors.text }]}
-          key={phase}
-          accessibilityLiveRegion="polite"
+    <Screen scrollable edges={['top', 'left', 'right', 'bottom']}>
+      {/* Header: back chevron, title, avatar */}
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          onPress={() => router.back()}
+          style={styles.headerHit}
+          hitSlop={8}
         >
-          {breathPhaseLabel(phase)}
+          <Icon ios="chevron.left" android="arrow_back" size={22} color={c.text} weight="semibold" />
+        </Pressable>
+        <Text style={[styles.headerTitle, { color: c.text }]} numberOfLines={1}>
+          Emergency Panic Sos
         </Text>
-        <ProgressRing progress={elapsed / URGE_SURF_DURATION_S} size={ringSize}>
-          <Animated.View style={breathStyle}>
-            <Orb cleanDays={cleanDays} size={orbSize} />
-          </Animated.View>
-        </ProgressRing>
-        <Text
-          style={[
-            styles.timer,
-            typeScale.tabular,
-            { color: theme.colors.text },
-          ]}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Your profile"
+          onPress={() => router.push('/you')}
+          style={styles.headerHit}
         >
-          {formatCountdown(remaining)}
-        </Text>
-        <Text style={[styles.meta, { color: theme.colors.metadata }]}>
-          Urges peak and pass. Ride the wave.
-        </Text>
-        {elapsed >= URGE_SURF_EARLY_EXIT_S ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="I'm okay now, end the session"
-            onPress={() => router.back()}
-            style={styles.earlyExit}
+          <View style={[styles.avatar, { backgroundColor: c.accent }]}>
+            <Icon ios="person.fill" android="person" size={18} color={c.onAccent} />
+          </View>
+        </Pressable>
+      </View>
+
+      {/* Breathing ring */}
+      <View style={styles.hero}>
+        <Animated.View style={breathStyle}>
+          <ProgressRing
+            progress={total > 0 ? remaining / total : 0}
+            size={ringSize}
+            stroke={4}
           >
-            <Text style={[styles.earlyExitText, { color: theme.colors.text }]}>
-              I’m okay now
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={styles.earlyExitPlaceholder} />
-        )}
+            <View style={styles.ringInner}>
+              <Text
+                style={[styles.cue, { color: c.text }]}
+                accessibilityLiveRegion="polite"
+              >
+                {copy.cue}
+              </Text>
+              <View
+                style={[styles.timerPill, { backgroundColor: c.surfaceDeep }]}
+                accessibilityRole="text"
+                accessibilityLabel={`${remaining} seconds remaining`}
+              >
+                <Icon ios="clock" android="schedule" size={13} color={c.accent} />
+                <Text
+                  style={[
+                    styles.timerText,
+                    typeScale.tabular,
+                    { color: c.metadata },
+                  ]}
+                >
+                  {formatCountdown(remaining)}
+                </Text>
+              </View>
+              <Text style={[styles.sub, { color: c.muted }]}>
+                {copy.sub.toUpperCase()}
+              </Text>
+            </View>
+          </ProgressRing>
+        </Animated.View>
+
+        {/* Phase dots — decorative, the cue text carries the meaning */}
+        <View
+          style={styles.dots}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        >
+          {[0, 1, 2].map((i) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                i === dotIndex
+                  ? [styles.dotActive, { backgroundColor: c.accent }]
+                  : { backgroundColor: c.hairline },
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+
+      {/* Education card — honest copy, no invented stats */}
+      <View
+        style={[styles.card, { backgroundColor: c.surface, borderColor: c.hairline }]}
+      >
+        <View style={[styles.cardIcon, { backgroundColor: c.surfaceDeep }]}>
+          <Icon ios="water.waves" android="waves" size={18} color={c.accent} />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={[styles.cardTitle, { color: c.text }]}>Surfing the Wave</Text>
+          <Text style={[styles.cardBody, { color: c.metadata }]}>
+            Urges peak and pass. Ride the wave.
+          </Text>
+        </View>
+      </View>
+
+      {/* Actions */}
+      <View style={styles.cta}>
+        <InvertedButton
+          title={finishing ? 'Saving…' : 'I Made It Through (Log Craving)'}
+          onPress={handleFinish}
+          loading={finishing}
+          accessibilityLabel="I made it through. Log craving"
+        />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="I need more time, add 2 minutes"
+          onPress={handleExtend}
+          style={styles.extend}
+        >
+          <Text style={[styles.extendText, { color: c.metadata }]}>
+            I need more time (+2 min)
+          </Text>
+        </Pressable>
       </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  centerWrap: {
-    flex: 1,
-    padding: spacing.lg,
+  header: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.lg,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    gap: spacing.xs,
   },
-  close: {
-    position: 'absolute',
-    top: spacing.md,
-    right: spacing.md,
+  headerHit: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 1,
   },
-  checkTitle: { ...typeScale.title3, textAlign: 'center' },
-  doneTitle: { ...typeScale.title1, textAlign: 'center' },
-  delta: { ...typeScale.body, textAlign: 'center' },
-  meta: { ...typeScale.footnote, textAlign: 'center' },
-  cue: { ...typeScale.title1, textAlign: 'center' },
-  timer: { ...typeScale.headline, textAlign: 'center' },
-  dotsRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: spacing.sm,
+  headerTitle: {
+    ...typeScale.title3,
+    flex: 1,
   },
-  dotCell: {
-    width: 56,
-    height: 56,
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  ringInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
+  cue: {
+    fontSize: 24,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  timerPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  timerText: {
+    ...typeScale.caption,
+    fontWeight: '600',
+  },
+  sub: {
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  dots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
   dot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dotActive: {
+    width: 24,
+    height: 6,
+    borderRadius: 3,
+  },
+  card: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  cardIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: radii.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardText: {
+    flex: 1,
+    gap: 2,
+  },
+  cardTitle: {
+    ...typeScale.subhead,
+    fontWeight: '600',
+  },
+  cardBody: {
+    ...typeScale.subhead,
   },
   cta: {
-    width: '100%',
-    marginTop: spacing.sm,
-    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xl,
+    gap: spacing.xs,
   },
-  skipLink: {
+  extend: {
     minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  skipText: { ...typeScale.headline },
-  earlyExit: {
-    minHeight: 56,
-    paddingHorizontal: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
+  extendText: {
+    ...typeScale.footnote,
+    fontWeight: '500',
   },
-  earlyExitText: { ...typeScale.headline },
-  earlyExitPlaceholder: { height: 56 },
 });
