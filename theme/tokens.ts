@@ -66,6 +66,9 @@ export interface ThemeColors {
   success: string;
   /** Light emerald — success pill backgrounds. */
   successSoft: string;
+  /** Translucent emerald wash — soft success pills on dark surfaces
+      (the reference's emerald pill tint). Pairs with `success` text. */
+  successDim: string;
   warning: string;
   danger: string;
   /** The Orb's color story — the product's single intentional color object. */
@@ -118,6 +121,7 @@ const shared = {
   accentSoft: 'rgba(167,139,250,0.16)',
   success: '#34d399', // emerald
   successSoft: '#bbf7d0', // light emerald — success pill backgrounds
+  successDim: 'rgba(52,211,153,0.15)', // translucent emerald wash — soft pills
   warning: '#FF9F0A', // iOS system orange
   danger: '#ef4444', // Stitch red — errors only
   /** Content drawn on the accent (switch thumbs, selected chips). */
