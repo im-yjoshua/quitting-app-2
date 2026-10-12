@@ -1,19 +1,20 @@
 /**
- * You tab (Phase 7 — v3 reskin, plan §3.7).
+ * You tab — Profile & Settings (Phase 6, plan §2.7 + §3.7).
  *
- * Inset grouped list — the iOS Settings pattern: section headers in
- * footnote caps, rows on the one grey surface, hairline separators,
- * disclosure chevrons, destructive action in red, one-sentence footers
- * explaining what each toggle does.
+ * Stitch reference: title + "Profile & Settings" subtitle, Go Premium upsell
+ * card (mini orb glow, hidden when already premium), then inset-grouped
+ * sections — QUIT SUMMARY (Focus Habit, Quit Timestamp, Daily Pledge Time),
+ * NOTIFICATIONS (two real toggles), APPEARANCE (real Light/Dark/System
+ * segmented), DATA & PRIVACY (Backup & Restore, premium-gated Export, red
+ * Reset All Progress with the real double-confirm flow), ABOUT (Privacy
+ * Policy, Terms, Support with the Phase-4 honest fallback, Version), and a
+ * one-line privacy footer.
  *
- * Sections: Quit (summary + pledge time → TimePickerSheet), Notifications
- * (two toggles, footers), Appearance (Light/Dark/System segmented — same
- * persistence contract), Data (backup & restore — same contracts),
- * Orb theme (same premium-gating contract), Commitments (same contract),
- * Premium (upsell row with Orb mini-glow for free users), About
- * (Privacy, Terms, Support, version), Danger zone.
+ * ONLY the rows in plan §2.7 ship — Stitch's fictional rows (Emergency
+ * Contact, Orb Glow Intensity, Evening Reflection Prompt, Sleep Focus
+ * delivery, FaceID app lock) are dropped per plan §3.7.
  *
- * Presentation-only: every handler below is the v2 logic, untouched —
+ * Presentation-only: every handler is the v2/v3 logic, untouched —
  * services/*, state/AppStateContext, and constants are consumed read-only.
  */
 import Constants from 'expo-constants';
@@ -28,14 +29,12 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 
 import { OrbGlow } from '../../../components/orb/OrbGlow';
 import { TimePickerSheet } from '../../../components/TimePickerSheet';
 import {
-  GhostButton,
   Screen,
   SectionHeader,
   SegmentedControl,
@@ -46,16 +45,8 @@ import {
   eraseAllAppData,
   exportV2Backup,
   importV2Backup,
-  verifyV2Integrity,
 } from '../../../services/appStateStore';
-import {
-  addTriggerApp,
-  clearCommitments,
-  loadCommitments,
-  removeTriggerApp,
-  saveCommitments,
-  type AppCommitmentState,
-} from '../../../services/commitments';
+import { clearCommitments } from '../../../services/commitments';
 import {
   createBackupFile,
   pickBackupFileContents,
@@ -69,14 +60,16 @@ import {
   scheduleDailyCheckIn,
 } from '../../../services/notifications';
 import { formatPledgeTime12h } from '../../../services/pledgeTime';
-import { restorePurchasesWithBiometrics } from '../../../services/purchases';
-import { cleanDaysFloor } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
 import { usePremium } from '../../../hooks/usePremium';
-import { orbThemes, radii, spacing, type as typeScale } from '../../../theme/tokens';
+import {
+  QUIT_CATEGORY_LABELS,
+  type AppearanceSetting,
+  type QuitCategory,
+} from '../../../types/app';
+import { radii, spacing, type as typeScale } from '../../../theme/tokens';
 import { useTheme } from '../../../theme/useTheme';
 import type { Theme } from '../../../theme/tokens';
-import type { AppearanceSetting, OrbTheme } from '../../../types/app';
 
 const APPLE_STANDARD_EULA =
   'https://www.apple.com/legal/internet-services/itunes/dev/stdeula/';
@@ -87,39 +80,108 @@ const APPEARANCES: { id: AppearanceSetting; label: string }[] = [
   { id: 'system', label: 'System' },
 ];
 
-const ORB_THEMES: { id: OrbTheme; label: string; locked: boolean }[] = [
-  { id: 'dawn', label: 'Dawn', locked: false },
-  { id: 'ember', label: 'Ember', locked: true },
-  { id: 'tide', label: 'Tide', locked: true },
-];
+/** Small SF-Symbol / Material-Symbol icon (no new native deps). */
+function Icon({
+  ios,
+  android,
+  size = 16,
+  color,
+}: {
+  ios: string;
+  android: string;
+  size?: number;
+  color: string;
+}) {
+  return (
+    <SymbolView
+      name={{ ios: ios as never, android: android as never }}
+      tintColor={color}
+      style={{ width: size, height: size }}
+    />
+  );
+}
 
-/** A tappable row: label left, optional value/chevron right. */
+/** Rounded icon tile at the row's leading edge, Stitch-style. */
+function IconTile({
+  theme,
+  ios,
+  android,
+  tone = 'accent',
+}: {
+  theme: Theme;
+  ios: string;
+  android: string;
+  tone?: 'accent' | 'danger';
+}) {
+  const c = theme.colors;
+  return (
+    <View
+      style={[
+        styles.iconTile,
+        {
+          backgroundColor:
+            tone === 'danger' ? c.danger : c.accentSoft,
+        },
+      ]}
+    >
+      <Icon
+        ios={ios}
+        android={android}
+        size={16}
+        color={tone === 'danger' ? c.onAccent : c.accent}
+      />
+    </View>
+  );
+}
+
+/** A tappable row: icon tile, label, optional value / PRO pill / chevron. */
 function Row({
   theme,
   label,
   value,
+  icon,
   onPress,
   chevron,
+  pro,
   last,
   accessibilityLabel,
   labelColor,
+  rightIcon,
+  iconTone = 'accent',
 }: {
   theme: Theme;
   label: string;
   value?: string;
+  icon?: { ios: string; android: string };
   onPress?: () => void;
   chevron?: boolean;
+  pro?: boolean;
   last?: boolean;
   accessibilityLabel?: string;
   labelColor?: string;
+  rightIcon?: { ios: string; android: string };
+  iconTone?: 'accent' | 'danger';
 }) {
   const c = theme.colors;
   const body = (
     <>
+      {icon ? (
+        <IconTile
+          theme={theme}
+          ios={icon.ios}
+          android={icon.android}
+          tone={iconTone}
+        />
+      ) : null}
       <Text style={[styles.rowLabel, { color: labelColor ?? c.text }]}>
         {label}
       </Text>
       <View style={styles.rowRight}>
+        {pro ? (
+          <View style={[styles.proPill, { backgroundColor: c.accentSoft }]}>
+            <Text style={[styles.proPillText, { color: c.accent }]}>PRO</Text>
+          </View>
+        ) : null}
         {value ? (
           <Text style={[styles.rowValue, { color: c.metadata }]}>{value}</Text>
         ) : null}
@@ -128,6 +190,14 @@ function Row({
             name="chevron.right"
             tintColor={c.metadata}
             style={styles.chevronIcon}
+          />
+        ) : null}
+        {rightIcon ? (
+          <Icon
+            ios={rightIcon.ios}
+            android={rightIcon.android}
+            size={18}
+            color={c.danger}
           />
         ) : null}
       </View>
@@ -150,16 +220,18 @@ function Row({
   );
 }
 
-/** A label + Switch row. The on-state is the accent (per the monochrome law). */
+/** A label + Switch row, with the Stitch icon tile. */
 function ToggleRow({
   theme,
   label,
+  icon,
   value,
   onValueChange,
   last,
 }: {
   theme: Theme;
   label: string;
+  icon: { ios: string; android: string };
   value: boolean;
   onValueChange: (next: boolean) => void;
   last?: boolean;
@@ -172,30 +244,46 @@ function ToggleRow({
         !last && { borderBottomWidth: 1, borderBottomColor: c.hairline },
       ]}
     >
+      <IconTile theme={theme} ios={icon.ios} android={icon.android} />
       <Text style={[styles.rowLabel, { color: c.text }]}>{label}</Text>
-      <Switch
-        accessibilityRole="switch"
-        accessibilityLabel={label}
-        accessibilityState={{ checked: value }}
-        value={value}
-        onValueChange={(next) => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          onValueChange(next);
-        }}
-        trackColor={{ false: c.hairline, true: c.accent }}
-        thumbColor={c.onAccent}
-        ios_backgroundColor={c.surface}
-      />
+      <View style={styles.rowRight}>
+        <Switch
+          accessibilityRole="switch"
+          accessibilityLabel={label}
+          accessibilityState={{ checked: value }}
+          value={value}
+          onValueChange={(next) => {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onValueChange(next);
+          }}
+          trackColor={{ false: c.hairline, true: c.accent }}
+          thumbColor={c.onAccent}
+          ios_backgroundColor={c.surface}
+        />
+      </View>
     </View>
   );
 }
 
-function Footer({ theme, children }: { theme: Theme; children: string }) {
-  return (
-    <Text style={[styles.footer, { color: theme.colors.metadata }]}>
-      {children}
-    </Text>
-  );
+/** "Oct 24, 2024 · 09:30 AM" — presentation formatting of the quit ISO. */
+function formatQuitTimestamp(iso: string): string {
+  const d = new Date(iso);
+  const date = d.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+  const time = d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `${date} · ${time}`;
+}
+
+function habitLabel(category: QuitCategory, customName?: string): string {
+  return category === 'custom' && customName
+    ? customName
+    : QUIT_CATEGORY_LABELS[category];
 }
 
 /** Loading state: skeletons in the shape of the inset-grouped list. */
@@ -216,23 +304,11 @@ export default function YouScreen() {
   const { state, loading, updateSettings, updatePledgeTime, refresh } =
     useAppState();
   const { isPremium } = usePremium();
-  // Purity rule: Date.now() can't run in the render body — snapshot it once.
-  const [nowSnapshot] = useState(() => Date.now());
-  const [integrity, setIntegrity] = useState<'verified' | 'recovered' | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [commitments, setCommitments] = useState<AppCommitmentState | null>(null);
-  const [newApp, setNewApp] = useState('');
-  const [guideOpen, setGuideOpen] = useState(false);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && state && !state.quit) router.replace('/onboarding');
   }, [loading, state]);
-
-  useEffect(() => {
-    void verifyV2Integrity().then(setIntegrity);
-    void loadCommitments().then(setCommitments);
-  }, []);
 
   if (loading || !state?.quit) {
     return (
@@ -243,25 +319,19 @@ export default function YouScreen() {
   }
 
   const quit = state.quit;
-  const cleanDays = cleanDaysFloor(quit.startDate, nowSnapshot);
   const settings = state.settings;
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
-  // ---- Backup ----
+  // ---- Backup & restore (free, local safety) ----
   const handleCreateBackup = async () => {
-    setBusy('backup');
-    try {
-      const created = await createBackupFile(exportV2Backup);
-      if (!created.success || !created.fileUri) {
-        Alert.alert('Backup failed', created.error ?? 'Could not create the backup file.');
-        return;
-      }
-      const shared = await shareBackupFile(created.fileUri);
-      if (!shared.shared && shared.error) {
-        Alert.alert('Backup saved', 'The backup file is saved on this device, but the share sheet could not be opened.');
-      }
-    } finally {
-      setBusy(null);
+    const created = await createBackupFile(exportV2Backup);
+    if (!created.success || !created.fileUri) {
+      Alert.alert('Backup failed', created.error ?? 'Could not create the backup file.');
+      return;
+    }
+    const shared = await shareBackupFile(created.fileUri);
+    if (!shared.shared && shared.error) {
+      Alert.alert('Backup saved', 'The backup file is saved on this device, but the share sheet could not be opened.');
     }
   };
 
@@ -274,30 +344,54 @@ export default function YouScreen() {
         {
           text: 'Choose file',
           onPress: async () => {
-            setBusy('restore');
-            try {
-              const picked = await pickBackupFileContents();
-              if (picked.canceled) return;
-              if (!picked.json) {
-                Alert.alert('Restore failed', picked.error ?? 'Could not read the file.');
-                return;
-              }
-              const result = await importV2Backup(picked.json);
-              if (!result.success) {
-                // Honest damaged-file footnote, right where it happens.
-                Alert.alert('Backup rejected', `${result.error ?? 'Invalid backup.'} Your current data was not touched.`);
-                return;
-              }
-              await refresh();
-              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              Alert.alert('Restored', 'Your backup is back in place.');
-            } finally {
-              setBusy(null);
+            const picked = await pickBackupFileContents();
+            if (picked.canceled) return;
+            if (!picked.json) {
+              Alert.alert('Restore failed', picked.error ?? 'Could not read the file.');
+              return;
             }
+            const result = await importV2Backup(picked.json);
+            if (!result.success) {
+              // Honest damaged-file footnote, right where it happens.
+              Alert.alert('Backup rejected', `${result.error ?? 'Invalid backup.'} Your current data was not touched.`);
+              return;
+            }
+            await refresh();
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert('Restored', 'Your backup is back in place.');
           },
         },
       ]
     );
+  };
+
+  const handleBackupRestore = () => {
+    Alert.alert(
+      'Backup & Restore',
+      'Backups are checksummed files — a damaged file is rejected, never half-applied.',
+      [
+        { text: 'Create backup', onPress: () => void handleCreateBackup() },
+        { text: 'Restore backup', onPress: () => void handleRestoreBackup() },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  // ---- Export (premium-gated): the same real export pipeline, shareable. ----
+  const handleExport = async () => {
+    if (!isPremium) {
+      router.push('/paywall');
+      return;
+    }
+    const created = await createBackupFile(exportV2Backup);
+    if (!created.success || !created.fileUri) {
+      Alert.alert('Export failed', created.error ?? 'Could not create the export file.');
+      return;
+    }
+    const shared = await shareBackupFile(created.fileUri);
+    if (!shared.shared && shared.error) {
+      Alert.alert('Export saved', 'The export file is saved on this device, but the share sheet could not be opened.');
+    }
   };
 
   // ---- Notifications ----
@@ -323,6 +417,18 @@ export default function YouScreen() {
     }
   };
 
+  const handleMilestoneAlerts = async (next: boolean) => {
+    await updateSettings({ milestoneAlerts: next });
+    if (!next) {
+      try {
+        await cancelScheduledNotification(MILESTONE_EVE_IDENTIFIER);
+      } catch {
+        // Best-effort.
+      }
+    }
+    // Re-enabling re-arms the next milestone eve on the next Home check.
+  };
+
   // ---- Pledge time ----
   const handleSavePledgeTime = async (time: string) => {
     setTimeSheetOpen(false);
@@ -346,69 +452,15 @@ export default function YouScreen() {
     }
   };
 
-  const handleMilestoneAlerts = async (next: boolean) => {
-    await updateSettings({ milestoneAlerts: next });
-    if (!next) {
-      try {
-        await cancelScheduledNotification(MILESTONE_EVE_IDENTIFIER);
-      } catch {
-        // Best-effort.
-      }
-    }
-    // Re-enabling re-arms the next milestone eve on the next Home check.
-  };
-
-  // ---- Commitments ----
-  const persistCommitments = async (next: AppCommitmentState) => {
-    setCommitments(next);
-    await saveCommitments(next);
-  };
-
-  const handleAddApp = async () => {
-    if (!commitments) return;
-    const { state: next, added } = addTriggerApp(commitments, newApp);
-    if (!added) {
-      Alert.alert(
-        'Could not add',
-        'Use a short name (max 40 characters), no duplicates — 20 apps max.'
-      );
-      return;
-    }
-    setNewApp('');
-    await persistCommitments(next);
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleRemoveApp = async (name: string) => {
-    if (!commitments) return;
-    await persistCommitments(removeTriggerApp(commitments, name));
-  };
-
-  // ---- Premium ----
-  const handleRestore = async () => {
-    setBusy('restore-purchases');
-    try {
-      const result = await restorePurchasesWithBiometrics();
-      Alert.alert(
-        result.success ? 'Restored' : 'Nothing to restore',
-        result.success
-          ? 'Your Sovereign membership is active on this device.'
-          : 'No purchases were found for this store account.'
-      );
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  // ---- Erase ----
+  // ---- Reset (real double-confirm flow) ----
   const handleErase = () => {
     Alert.alert(
-      'Erase everything?',
+      'Reset all progress?',
       'This deletes your streak, journal, milestones, and settings from this device. This cannot be undone.',
       [
         { text: 'Keep my data', style: 'cancel' },
         {
-          text: 'Erase',
+          text: 'Reset',
           style: 'destructive',
           onPress: () =>
             Alert.alert(
@@ -417,7 +469,7 @@ export default function YouScreen() {
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                  text: 'Erase everything',
+                  text: 'Reset everything',
                   style: 'destructive',
                   onPress: async () => {
                     await eraseAllAppData();
@@ -448,306 +500,159 @@ export default function YouScreen() {
   return (
     <Screen scrollable scrollContentStyle={styles.content}>
       <Text style={[styles.title, { color: c.text }]}>You</Text>
+      <Text style={[styles.subtitle, { color: c.metadata }]}>
+        Profile &amp; Settings
+      </Text>
 
-      {/* Quit summary + pledge time */}
-      <SectionHeader title="Quit" />
+      {/* Go Premium upsell — hidden once premium. */}
+      {!isPremium && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go Premium — see Sovereign plans"
+          onPress={() => router.push('/paywall')}
+          style={({ pressed }) => [
+            styles.upsell,
+            { backgroundColor: c.surface },
+            pressed && styles.pressed,
+          ]}
+        >
+          <OrbGlow size={44} />
+          <View style={styles.upsellText}>
+            <View style={styles.upsellTitleRow}>
+              <Text style={[styles.upsellTitle, { color: c.text }]}>
+                Go Premium
+              </Text>
+              <View style={[styles.proPill, { backgroundColor: c.accentSoft }]}>
+                <Text style={[styles.proPillText, { color: c.accent }]}>
+                  PRO
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.upsellSub, { color: c.metadata }]}>
+              Voice journaling, orb themes &amp; more
+            </Text>
+          </View>
+          <View style={[styles.upgradePill, { backgroundColor: c.accent }]}>
+            <Text style={[styles.upgradeText, { color: c.onAccent }]}>
+              Upgrade
+            </Text>
+          </View>
+        </Pressable>
+      )}
+
+      {/* QUIT SUMMARY — real values; only pledge time is editable. */}
+      <SectionHeader title="Quit Summary" />
       <View style={[styles.group, { backgroundColor: c.surface }]}>
-        <Row theme={theme} label="Days clean" value={String(cleanDays)} />
         <Row
           theme={theme}
-          label="Pledge streak"
-          value={`${state.pledge.pledgeStreak} days`}
+          label="Focus Habit"
+          value={habitLabel(quit.category, quit.customName)}
+          icon={{ ios: 'target', android: 'track_changes' }}
         />
         <Row
           theme={theme}
-          label="Pledge time"
+          label="Quit Timestamp"
+          value={formatQuitTimestamp(quit.startDate)}
+          icon={{ ios: 'calendar', android: 'calendar_month' }}
+        />
+        <Row
+          theme={theme}
+          label="Daily Pledge Time"
           value={formatPledgeTime12h(quit.pledgeTime)}
+          icon={{ ios: 'clock.fill', android: 'schedule' }}
           chevron
           last
-          accessibilityLabel={`Pledge time, currently ${formatPledgeTime12h(quit.pledgeTime)}. Tap to change.`}
+          accessibilityLabel={`Daily pledge time, currently ${formatPledgeTime12h(quit.pledgeTime)}. Tap to change.`}
           onPress={() => setTimeSheetOpen(true)}
         />
       </View>
 
-      {/* Notifications — one sentence of footer per toggle */}
+      {/* NOTIFICATIONS — the two real toggles. */}
       <SectionHeader title="Notifications" />
       <View style={[styles.group, { backgroundColor: c.surface }]}>
         <ToggleRow
           theme={theme}
-          label="Morning pledge reminder"
+          label="Daily Pledge Reminder"
+          icon={{ ios: 'bell.fill', android: 'notifications' }}
           value={settings.pledgeReminder}
           onValueChange={handlePledgeReminder}
-          last
         />
-      </View>
-      <Footer theme={theme}>
-        A gentle nudge at your pledge time, so each day starts with the pledge.
-      </Footer>
-      <View style={[styles.group, { backgroundColor: c.surface }]}>
         <ToggleRow
           theme={theme}
-          label="Milestone alerts"
+          label="Milestone Alerts"
+          icon={{ ios: 'trophy.fill', android: 'emoji_events' }}
           value={settings.milestoneAlerts}
           onValueChange={handleMilestoneAlerts}
           last
         />
       </View>
-      <Footer theme={theme}>
-        A heads-up the evening before a milestone, so you meet it head-on.
-      </Footer>
 
-      {/* Appearance — Light / Dark / System, same persistence contract */}
+      {/* APPEARANCE — real Light / Dark / System setting. */}
       <SectionHeader title="Appearance" />
-      <SegmentedControl
-        segments={APPEARANCES.map((a) => a.label)}
-        selectedIndex={appearanceIndex}
-        onChange={(index) => {
-          void updateSettings({ appearance: APPEARANCES[index].id });
-        }}
-        accessibilityLabel="Appearance"
-      />
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <View style={[styles.row, { borderBottomWidth: 0 }]}>
+          <IconTile
+            theme={theme}
+            ios="moon.fill"
+            android="dark_mode"
+          />
+          <Text style={[styles.rowLabel, { color: c.text }]}>Theme</Text>
+        </View>
+        <View style={styles.segmentedWrap}>
+          <SegmentedControl
+            segments={APPEARANCES.map((a) => a.label)}
+            selectedIndex={appearanceIndex}
+            onChange={(index) => {
+              void updateSettings({ appearance: APPEARANCES[index].id });
+            }}
+            accessibilityLabel="Appearance"
+          />
+        </View>
+      </View>
 
-      {/* Data & Backup */}
-      <SectionHeader title="Data" />
+      {/* DATA & PRIVACY */}
+      <SectionHeader title="Data & Privacy" />
       <View style={[styles.group, { backgroundColor: c.surface }]}>
         <Row
           theme={theme}
-          label="Storage integrity"
-          last
-          value={
-            integrity === null
-              ? 'Checking…'
-              : integrity === 'verified'
-                ? '✓ Verified'
-                : 'Recovered from safe defaults'
+          label="Backup & Restore"
+          icon={{ ios: 'arrow.triangle.2.circlepath', android: 'sync' }}
+          chevron
+          accessibilityLabel="Backup and restore. Tap to choose."
+          onPress={handleBackupRestore}
+        />
+        <Row
+          theme={theme}
+          label="Export Recovery Data"
+          icon={{ ios: 'square.and.arrow.up', android: 'share' }}
+          chevron
+          pro={!isPremium}
+          accessibilityLabel={
+            isPremium
+              ? 'Export recovery data'
+              : 'Export recovery data, Sovereign members only. Tap to see plans.'
           }
+          onPress={handleExport}
         />
-      </View>
-      <Footer theme={theme}>
-        Everything stays on this device. Backups are checksummed — damaged
-        files are rejected, never half-applied.
-      </Footer>
-      <View style={styles.btnRow}>
-        <GhostButton
-          title="Create backup"
-          onPress={handleCreateBackup}
-          loading={busy === 'backup'}
-          disabled={busy !== null}
-          style={styles.btnHalf}
-        />
-        <GhostButton
-          title="Restore backup"
-          onPress={handleRestoreBackup}
-          loading={busy === 'restore'}
-          disabled={busy !== null}
-          style={styles.btnHalf}
+        <Row
+          theme={theme}
+          label="Reset All Progress"
+          icon={{ ios: 'exclamationmark.triangle.fill', android: 'warning' }}
+          iconTone="danger"
+          labelColor={c.danger}
+          last
+          accessibilityLabel="Reset all progress. This cannot be undone."
+          onPress={handleErase}
         />
       </View>
 
-      {/* Orb theme — Ember & Tide are Sovereign-member only (same contract) */}
-      <SectionHeader title="Orb theme" />
-      <View style={[styles.group, { backgroundColor: c.surface }]}>
-        <View style={styles.themeRow}>
-          {ORB_THEMES.map((t) => {
-            const locked = t.locked && !isPremium;
-            const selected = settings.orbTheme === t.id;
-            return (
-              <Pressable
-                key={t.id}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: selected }}
-                accessibilityLabel={
-                  locked
-                    ? `${t.label} theme (Sovereign members only)`
-                    : `${t.label} theme`
-                }
-                onPress={() => {
-                  if (locked) {
-                    router.push('/paywall');
-                  } else {
-                    void Haptics.selectionAsync();
-                    void updateSettings({ orbTheme: t.id });
-                  }
-                }}
-                style={({ pressed }) => [
-                  styles.themeSwatch,
-                  {
-                    borderColor: selected ? c.accent : 'transparent',
-                    backgroundColor: selected ? c.accentSoft : 'transparent',
-                  },
-                  pressed && styles.pressed,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.themeDot,
-                    { backgroundColor: orbThemes[t.id].glow },
-                  ]}
-                />
-                <View style={styles.themeLabelRow}>
-                  <Text style={[styles.themeLabel, { color: c.text }]}>
-                    {t.label}
-                  </Text>
-                  {locked ? (
-                    <SymbolView
-                      name="lock.fill"
-                      tintColor={c.metadata}
-                      style={styles.lockIcon}
-                    />
-                  ) : null}
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-      {!isPremium && (
-        <Footer theme={theme}>Ember and Tide unlock with Sovereign.</Footer>
-      )}
-
-      {/* App Commitments — same contract, honest copy kept */}
-      <SectionHeader title="Commitments" />
-      <View style={[styles.group, { backgroundColor: c.surface }]}>
-        <View style={styles.padded}>
-          <Text style={[styles.body, { color: c.text }]}>
-            Declare the apps you commit to avoid. This is a personal
-            commitment — Sovereign can&apos;t block or limit other apps.
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={
-              guideOpen
-                ? 'Hide the honest Screen Time guide'
-                : 'Show the honest Screen Time guide'
-            }
-            onPress={() => setGuideOpen((o) => !o)}
-            style={styles.guideToggle}
-            hitSlop={8}
-          >
-            <Text style={[styles.guideToggleText, { color: c.accent }]}>
-              {guideOpen ? 'Hide' : 'Show'} the honest Screen Time guide
-            </Text>
-          </Pressable>
-          {guideOpen && (
-            <Text
-              style={[
-                styles.guide,
-                { color: c.text, backgroundColor: c.background },
-              ]}
-            >
-              If you want enforced limits, iOS Screen Time is the real tool:
-              Settings → Screen Time → App Limits → Add Limit → pick the app
-              → set 1 minute. Sovereign won&apos;t pretend to do this for you
-              — but your commitment list above keeps the promise visible.
-            </Text>
-          )}
-          <View style={styles.addRow}>
-            <TextInput
-              placeholder="App name, e.g. TikTok"
-              placeholderTextColor={c.metadata}
-              value={newApp}
-              onChangeText={setNewApp}
-              maxLength={40}
-              returnKeyType="done"
-              onSubmitEditing={handleAddApp}
-              style={[
-                styles.field,
-                { color: c.text, backgroundColor: c.background },
-              ]}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Add app commitment"
-              onPress={handleAddApp}
-              style={({ pressed }) => [
-                styles.addBtn,
-                { backgroundColor: c.inverted },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[styles.addBtnText, { color: c.background }]}>
-                Add
-              </Text>
-            </Pressable>
-          </View>
-          {(commitments?.triggerApps ?? []).map((app, i, arr) => (
-            <View
-              key={app}
-              style={[
-                styles.appRow,
-                i < arr.length - 1 && {
-                  borderBottomWidth: 1,
-                  borderBottomColor: c.hairline,
-                },
-              ]}
-            >
-              <Text style={[styles.appName, { color: c.text }]}>{app}</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Remove ${app}`}
-                onPress={() => handleRemoveApp(app)}
-                style={styles.removeBtn}
-                hitSlop={8}
-              >
-                <Text style={[styles.removeText, { color: c.accent }]}>
-                  Remove
-                </Text>
-              </Pressable>
-            </View>
-          ))}
-          {(commitments?.triggerApps.length ?? 0) === 0 && (
-            <Text style={[styles.empty, { color: c.metadata }]}>
-              No commitments yet — add the apps that test you most.
-            </Text>
-          )}
-        </View>
-      </View>
-
-      {/* Premium */}
-      <SectionHeader title="Premium" />
-      <View style={[styles.group, { backgroundColor: c.surface }]}>
-        {isPremium ? (
-          <Row theme={theme} label="Membership" value="✓ Active" />
-        ) : (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Go Premium — see Sovereign plans"
-            onPress={() => router.push('/paywall')}
-            style={({ pressed }) => [styles.upsell, pressed && styles.pressed]}
-          >
-            <OrbGlow size={26} />
-            <Text style={[styles.upsellLabel, { color: c.text }]}>
-              Go Premium
-            </Text>
-            <SymbolView
-              name="chevron.right"
-              tintColor={c.metadata}
-              style={styles.chevronIcon}
-            />
-          </Pressable>
-        )}
-        <View style={[styles.divider, { backgroundColor: c.hairline }]} />
-        <Pressable
-          accessibilityRole="button"
-          onPress={handleRestore}
-          disabled={busy !== null}
-          style={({ pressed }) => [
-            styles.row,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={[styles.rowLabel, { color: c.accent }]}>
-            {busy === 'restore-purchases' ? 'Restoring…' : 'Restore purchases'}
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* About */}
+      {/* ABOUT */}
       <SectionHeader title="About" />
       <View style={[styles.group, { backgroundColor: c.surface }]}>
         <Row
           theme={theme}
-          label="Privacy policy"
+          label="Privacy Policy"
+          icon={{ ios: 'lock.shield.fill', android: 'shield' }}
           chevron
           onPress={() =>
             openLink(
@@ -758,13 +663,15 @@ export default function YouScreen() {
         />
         <Row
           theme={theme}
-          label="Terms of use"
+          label="Terms"
+          icon={{ ios: 'doc.text.fill', android: 'description' }}
           chevron
           onPress={() => void Linking.openURL(APPLE_STANDARD_EULA)}
         />
         <Row
           theme={theme}
-          label="Contact support"
+          label="Support"
+          icon={{ ios: 'headphones', android: 'headset_mic' }}
           chevron
           onPress={() =>
             openLink(
@@ -773,33 +680,18 @@ export default function YouScreen() {
             )
           }
         />
-        <Row theme={theme} label="Version" value={version} last />
+        <Row
+          theme={theme}
+          label="Version"
+          value={version}
+          icon={{ ios: 'info.circle.fill', android: 'info' }}
+          last
+        />
       </View>
 
-      {/* Danger zone */}
-      <SectionHeader title="Danger zone" />
-      <View style={[styles.group, { backgroundColor: c.surface }]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Erase all my data"
-          onPress={handleErase}
-          style={({ pressed }) => [
-            styles.row,
-            { borderBottomWidth: 0 },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={[styles.rowLabel, { color: c.danger }]}>
-            Erase all my data
-          </Text>
-        </Pressable>
-      </View>
-      <Footer theme={theme}>
-        Deletes your streak, journal, and settings from this device. Your App
-        Store purchase history is untouched.
-      </Footer>
-
-      <View style={{ height: spacing.xxl }} />
+      <Text style={[styles.footer, { color: c.metadata }]}>
+        Private by design — everything stays on this device.
+      </Text>
 
       <TimePickerSheet
         visible={timeSheetOpen}
@@ -815,104 +707,68 @@ const styles = StyleSheet.create({
   skelContent: { paddingTop: spacing.sm },
   skelGap: { marginBottom: spacing.md },
   content: { paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  title: { ...typeScale.largeTitle, marginBottom: spacing.sm },
+  title: { ...typeScale.largeTitle },
+  subtitle: { ...typeScale.body, marginTop: spacing.xs, marginBottom: spacing.md },
   group: {
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     overflow: 'hidden',
   },
   row: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.sm,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
-    minHeight: 48,
+    minHeight: 52,
   },
-  rowLabel: { ...typeScale.headline },
+  rowLabel: { ...typeScale.headline, flex: 1 },
   rowRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   rowValue: { ...typeScale.body, ...typeScale.tabular },
   chevronIcon: { width: 12, height: 16 },
   pressed: { opacity: 0.7 },
-  footer: {
-    ...typeScale.footnote,
-    marginTop: spacing.sm,
-    marginBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
+  iconTile: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  padded: { padding: spacing.md },
-  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  btnHalf: { flex: 1 },
+  proPill: {
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+  },
+  proPillText: { ...typeScale.caption, fontWeight: '700', letterSpacing: 1 },
   upsell: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    minHeight: 48,
-  },
-  upsellLabel: { ...typeScale.headline, flex: 1 },
-  divider: { height: 1, marginLeft: spacing.md },
-  themeRow: { flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
-  themeSwatch: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: radii.sm,
-    borderWidth: 1.5,
-  },
-  themeDot: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-  },
-  themeLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  themeLabel: { ...typeScale.headline },
-  lockIcon: { width: 12, height: 14 },
-  body: { ...typeScale.body, lineHeight: 24 },
-  guideToggle: {
-    paddingVertical: spacing.sm,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  guideToggleText: { ...typeScale.headline },
-  guide: {
-    ...typeScale.body,
-    lineHeight: 22,
-    borderRadius: radii.sm,
+    gap: spacing.md,
+    borderRadius: radii.lg,
     padding: spacing.md,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.xs,
+    minHeight: 76,
   },
-  addRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-    alignItems: 'center',
-  },
-  field: {
-    ...typeScale.body,
-    flex: 1,
-    minHeight: 48,
-    borderRadius: radii.md,
+  upsellText: { flex: 1, gap: 2 },
+  upsellTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  upsellTitle: { ...typeScale.headline },
+  upsellSub: { ...typeScale.footnote },
+  upgradePill: {
+    borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
-  },
-  addBtn: {
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.md,
-    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    minHeight: 44,
     justifyContent: 'center',
   },
-  addBtnText: { ...typeScale.headline },
-  appRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-    minHeight: 44,
+  upgradeText: { ...typeScale.headline },
+  segmentedWrap: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.md,
   },
-  appName: { ...typeScale.body },
-  removeBtn: { paddingVertical: spacing.sm, paddingLeft: spacing.md },
-  removeText: { ...typeScale.headline },
-  empty: { ...typeScale.footnote, fontStyle: 'italic', marginTop: spacing.sm },
+  footer: {
+    ...typeScale.footnote,
+    textAlign: 'center',
+    marginTop: spacing.xl,
+    marginBottom: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+  },
 });
