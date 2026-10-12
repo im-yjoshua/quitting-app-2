@@ -102,6 +102,10 @@ export async function cancelScheduledNotification(identifier: string): Promise<v
   }
 }
 
+/**
+ * The daily pledge reminder (spec §5, "Daily Pledge Reminder" toggle).
+ * Copy is the Phase 7 Stitch lock-screen copy — plain, honest, no claims.
+ */
 export async function scheduleDailyCheckIn(
   hour: number = 9,
   minute: number = 0
@@ -122,8 +126,8 @@ export async function scheduleDailyCheckIn(
     const notificationId = await Notifications.scheduleNotificationAsync({
       identifier: DAILY_ENCOURAGEMENT_IDENTIFIER,
       content: {
-        title: 'Sovereign Check-In',
-        body: 'Hold the line today.',
+        title: 'Time to pledge',
+        body: 'Your daily Sovereign pledge is waiting. Anchor your commitment for the next 24 hours.',
         sound: true,
         data: {
           type: 'daily_encouragement',

@@ -59,6 +59,7 @@ import {
   Skeleton,
 } from '../../../components/ui';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
+import { PledgeConfirmationSheet } from '../../../components/PledgeConfirmationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
 import {
   breakDownDuration,
@@ -68,7 +69,7 @@ import {
 } from '../../../services/chronometerEngine';
 import { MILESTONES, nextMilestone } from '../../../services/milestones';
 import { hasPledgedToday } from '../../../services/pledge';
-import { formatMoney, moneySaved } from '../../../services/savings';
+import { formatMoney, moneySaved, timeReclaimed } from '../../../services/savings';
 import { useAppState } from '../../../state/AppStateContext';
 import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
 import { usePremium } from '../../../hooks/usePremium';
@@ -164,6 +165,9 @@ export default function HomeScreen() {
   const reduceMotion = useReducedMotion();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [oathOpen, setOathOpen] = useState(false);
+  // Pledge confirmation sheet: opens right after a pledge counts.
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmRecordedAt, setConfirmRecordedAt] = useState(() => Date.now());
   const celebration = useMilestoneCelebration();
   const { isPremium } = usePremium();
 
@@ -285,6 +289,8 @@ export default function HomeScreen() {
     const counted = await pledgeNow();
     if (counted) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setConfirmRecordedAt(Date.now());
+      setConfirmOpen(true);
     }
   };
 
@@ -619,10 +625,22 @@ export default function HomeScreen() {
 
       <OathSheet visible={oathOpen} onClose={() => setOathOpen(false)} />
 
+      <PledgeConfirmationSheet
+        visible={confirmOpen}
+        pledgeStreak={pledgeStreak}
+        pledgeTime={quit.pledgeTime}
+        recordedAtMs={confirmRecordedAt}
+        onClose={() => setConfirmOpen(false)}
+      />
+
       {celebration.celebration !== null && (
         <CelebrationSheet
           visible
           milestone={celebration.celebration}
+          category={quit.category}
+          urgesTotal={urgesTotal}
+          capitalSaved={saved}
+          timeReclaimed={timeReclaimed(quit.dailyMinutes, days)}
           onShare={celebration.openShare}
           onDismiss={celebration.dismissCelebration}
         />

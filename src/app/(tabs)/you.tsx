@@ -65,6 +65,7 @@ import { usePremium } from '../../../hooks/usePremium';
 import {
   QUIT_CATEGORY_LABELS,
   type AppearanceSetting,
+  type OrbTheme,
   type QuitCategory,
 } from '../../../types/app';
 import { radii, spacing, type as typeScale } from '../../../theme/tokens';
@@ -78,6 +79,14 @@ const APPEARANCES: { id: AppearanceSetting; label: string }[] = [
   { id: 'light', label: 'Light' },
   { id: 'dark', label: 'Dark' },
   { id: 'system', label: 'System' },
+];
+
+/** Orb themes — the paywall advertises these as premium; settings.orbTheme
+ * persists the pick (dawn is the free default; ember/tide are premium). */
+const ORB_THEMES: { id: OrbTheme; label: string }[] = [
+  { id: 'dawn', label: 'Dawn' },
+  { id: 'ember', label: 'Ember' },
+  { id: 'tide', label: 'Tide' },
 ];
 
 /** Small SF-Symbol / Material-Symbol icon (no new native deps). */
@@ -305,6 +314,8 @@ export default function YouScreen() {
     useAppState();
   const { isPremium } = usePremium();
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  // Orb theme picker expansion (premium-gated row below).
+  const [orbPickerOpen, setOrbPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && state && !state.quit) router.replace('/onboarding');
@@ -608,6 +619,49 @@ export default function YouScreen() {
             accessibilityLabel="Appearance"
           />
         </View>
+      </View>
+
+      {/* ORB THEME — premium-gated (the paywall advertises orb themes as
+          premium). Real persistence via settings.orbTheme. */}
+      <View style={[styles.group, { backgroundColor: c.surface }]}>
+        <Row
+          theme={theme}
+          label="Orb Theme"
+          value={
+            ORB_THEMES.find((o) => o.id === settings.orbTheme)?.label ?? 'Dawn'
+          }
+          icon={{ ios: 'sparkles', android: 'auto_awesome' }}
+          chevron
+          pro={!isPremium}
+          last={!orbPickerOpen}
+          accessibilityLabel={
+            isPremium
+              ? `Orb theme, currently ${ORB_THEMES.find((o) => o.id === settings.orbTheme)?.label ?? 'Dawn'}. Tap to change.`
+              : 'Orb theme, Sovereign members only. Tap to see plans.'
+          }
+          onPress={() => {
+            if (!isPremium) {
+              router.push('/paywall');
+              return;
+            }
+            setOrbPickerOpen((open) => !open);
+          }}
+        />
+        {isPremium && orbPickerOpen && (
+          <View style={styles.segmentedWrap}>
+            <SegmentedControl
+              segments={ORB_THEMES.map((o) => o.label)}
+              selectedIndex={Math.max(
+                0,
+                ORB_THEMES.findIndex((o) => o.id === settings.orbTheme)
+              )}
+              onChange={(index) => {
+                void updateSettings({ orbTheme: ORB_THEMES[index].id });
+              }}
+              accessibilityLabel="Orb theme"
+            />
+          </View>
+        )}
       </View>
 
       {/* DATA & PRIVACY */}

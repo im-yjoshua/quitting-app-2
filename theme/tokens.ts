@@ -163,6 +163,29 @@ export interface Theme {
 export const dark: Theme = { scheme: 'dark', colors: darkColors };
 export const light: Theme = { scheme: 'light', colors: lightColors };
 
+/**
+ * Share-card art — the premium dark milestone card (Phase 7, Stitch
+ * share_card reference). Hex lives here, never in the component.
+ * `classic` is the free obsidian-violet card; `noir` is the premium
+ * black-gold card. Content stays honest: no attestation theater.
+ */
+export const shareCardThemes = {
+  classic: {
+    gradient: ['#16121f', '#0b0b0e', '#141021'],
+    number: '#fafafa',
+    accent: '#a78bfa',
+    wordmark: '#8a86a0',
+    body: '#a1a1aa',
+  },
+  noir: {
+    gradient: ['#050505', '#0a0a0a', '#050505'],
+    number: '#f5eedd',
+    accent: '#d4af6a',
+    wordmark: '#8a7f66',
+    body: '#8a7f66',
+  },
+} as const;
+
 /** 4pt base unit — only values on the 4/8 grid. */
 export const spacing = {
   xs: 4,
