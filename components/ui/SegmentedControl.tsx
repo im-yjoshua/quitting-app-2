@@ -1,8 +1,8 @@
 /**
- * SegmentedControl — glass container with a sliding selection pill.
+ * SegmentedControl — container with a sliding selection pill.
  *
  * iOS segmented pattern (Week / Month / All time): the selected segment is
- * the accent pill, unselected labels are metadata. Selection fires a
+ * the violet accent pill, unselected labels are metadata. Selection fires a
  * selection haptic at animation start; the pill travels on the standard
  * spring (instant under Reduce Motion). Segments are equal-width.
  */

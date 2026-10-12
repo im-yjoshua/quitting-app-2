@@ -1,5 +1,5 @@
 /**
- * Screen — v3 screen wrapper: pure monochrome canvas, safe areas respected.
+ * Screen — v4 screen wrapper: Stitch near-black canvas, safe areas respected.
  *
  * The background extends under the notch/home indicator; content is inset.
  * `scrollable` renders a ScrollView with interactive keyboard dismissal.

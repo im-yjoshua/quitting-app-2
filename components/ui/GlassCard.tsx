@@ -3,6 +3,8 @@
  * (pledge card, segmented control container, sheet handles).
  *
  * Never under body text — long-form content stays on the solid canvas.
+ * Shape: 16px radius; the solid fallback tier renders surface #18181b with
+ * a 1px hairline rim per the Stitch zinc scale.
  */
 import React from 'react';
 import { StyleProp, StyleSheet, View, ViewStyle } from 'react-native';

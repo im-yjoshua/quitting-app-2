@@ -1,8 +1,9 @@
 /**
- * ProgressRing — monochrome progress ring, drawn from the top clockwise.
+ * ProgressRing — violet progress ring, drawn from the top clockwise.
  *
- * Two-half technique (no SVG dependency): each half-container clips a
- * full-circle border to a semicircle and rotates to reveal the arc.
+ * Stitch styling: accent (#a78bfa) arc on a hairline track — the day-count
+ * hero ring. Two-half technique (no SVG dependency): each half-container
+ * clips a full-circle border to a semicircle and rotates to reveal the arc.
  * Progress changes travel on the standard spring; under Reduce Motion the
  * ring jumps to its value. Children render centered (e.g. a day count in
  * tabular numerals).

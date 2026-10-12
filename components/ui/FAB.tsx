@@ -1,8 +1,9 @@
 /**
  * FAB — the floating action button, the one intentional spot of color.
  *
- * Solid accent fill (never monochrome, never glass), white SF Symbol,
- * 56pt circle. Parent positions it (absolute, above the tab bar insets).
+ * Solid accentDeep fill (never monochrome, never glass), white SF Symbol,
+ * 56pt circle — the violet waveform button from the Stitch home screen.
+ * Parent positions it (absolute, above the tab bar insets).
  */
 import { SymbolView } from 'expo-symbols';
 import React from 'react';
@@ -51,7 +52,7 @@ export function FAB({
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: theme.colors.accent,
+            backgroundColor: theme.colors.accentDeep,
             boxShadow: '0px 4px 8px rgba(0,0,0,0.3)',
           },
           style,

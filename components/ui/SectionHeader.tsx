@@ -1,8 +1,9 @@
 /**
- * SectionHeader — Settings-pattern section header.
+ * SectionHeader — Settings-pattern section header (Stitch).
  *
- * Uppercase footnote in metadata, 16pt above the group, 8pt below. Optional
- * inline text action on the trailing edge (accent — this counts as a link).
+ * Uppercase letterspaced footnote in metadata (QUIT SUMMARY, NOTIFICATIONS
+ * …), 16pt above the group, 8pt below. Optional inline text action on the
+ * trailing edge (accent — this counts as a link). 44pt minimum row.
  */
 import React from 'react';
 import { Pressable, StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
@@ -51,6 +52,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
     minHeight: 44,
   },
-  title: { ...typeScale.footnote },
+  title: { ...typeScale.footnote, letterSpacing: 1 },
   action: { ...typeScale.footnote, fontWeight: '600' },
 });
