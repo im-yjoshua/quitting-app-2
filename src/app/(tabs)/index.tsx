@@ -1,24 +1,10 @@
 /**
- * Home — v4 Stitch rebuild (Phase 3).
+ * Home — v4 Stitch 3-Tier Layout Upgrade.
  *
- * Matches Joshua's approved Google Stitch home reference as closely as
- * native allows:
- * - Fixed header: "Home" + decorative bell icon + violet avatar (→ You tab).
- * - Hero: violet ProgressRing with the big day count + "· DAYS CLEAN ·".
- *   The ring fills as the current day completes (honest definition of a
- *   day-count ring); a gentle breathing scale echoes the reference orb
- *   (static under Reduce Motion).
- * - Timer pill: clock icon + live HH:MM:SS in tabular numerals +
- *   "CLEAN TIME RIGHT NOW" (numbers just change — no animation on tick).
- * - Daily Pledge card: "Active" emerald pill + pledged row (check,
- *   "{streak}-day consecutive commitment", "View oath" → oath sheet);
- *   unpledged shows the "I pledge today" action instead.
- * - Milestone card: trophy, real next milestone, % + gradient progress bar
- *   (accentDeep → accent → success, token colors), real days left.
- *   ("Inner Shield tier unlocking" was Stitch fiction — honest subtitle.)
- * - Stat cards: Money Saved (real, +$/day) and Urges Defeated (real
- *   completed urge-surf count + today's count).
- * - Quote card, CRAVE SOS pill + violet waveform FAB → urge-surf.
+ * 3-Tier Layout Architecture:
+ * - Tier 1: Hero Orb (components/orb) with streak-reactive glow + live tabular clean-time ticker.
+ * - Tier 2: Thumb-zone action bar (Pledge Today / Pledged + Urge Surf).
+ * - Tier 3: 2-column GlassCard bento grid (Milestone, Money Saved, Urges Defeated, Commitment & Quote).
  *
  * Presentation only: every number comes from services/* + AppState
  * (chronometerEngine, milestones, savings, pledge, urgeSurf logs).
@@ -38,26 +24,18 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Animated, {
-  Easing,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   AccentButton,
-  FAB,
   GhostButton,
-  ProgressRing,
+  GlassCard,
+  InvertedButton,
   Screen,
   Sheet,
   Skeleton,
 } from '../../../components/ui';
+import { Orb } from '../../../components/orb';
 import { CelebrationSheet } from '../../../components/CelebrationSheet';
 import { PledgeConfirmationSheet } from '../../../components/PledgeConfirmationSheet';
 import { ShareCardSheet } from '../../../components/ShareCardSheet';
@@ -65,7 +43,6 @@ import {
   breakDownDuration,
   calculateCleanDurationMs,
   getLocalDateKey,
-  MS_PER_DAY,
 } from '../../../services/chronometerEngine';
 import { MILESTONES, nextMilestone } from '../../../services/milestones';
 import { hasPledgedToday } from '../../../services/pledge';
@@ -74,7 +51,7 @@ import { useAppState } from '../../../state/AppStateContext';
 import { useMilestoneCelebration } from '../../../hooks/useMilestoneCelebration';
 import { usePremium } from '../../../hooks/usePremium';
 import { useTheme } from '../../../theme/useTheme';
-import { motion, radii, spacing, type as typeScale } from '../../../theme/tokens';
+import { radii, spacing, type as typeScale } from '../../../theme/tokens';
 
 /** Small SF-Symbol / Material-Symbol icon (no new native deps). */
 function Icon({
@@ -100,7 +77,7 @@ function Icon({
   );
 }
 
-/** Loading state: skeletons in the shape of the Home layout. */
+/** Loading state: skeletons in the shape of the 3-Tier Home layout. */
 function HomeSkeleton() {
   return (
     <View style={styles.skelContent} testID="home-loading">
@@ -111,10 +88,17 @@ function HomeSkeleton() {
           <Skeleton width={32} height={32} radius={16} />
         </View>
       </View>
-      <Skeleton width={232} height={232} radius={116} style={styles.skelCenter} />
+      <Skeleton width={200} height={200} radius={100} style={styles.skelCenter} />
       <Skeleton width={170} height={34} radius={17} style={styles.skelCenter} />
-      <Skeleton width="100%" height={148} radius={radii.lg} />
+      <View style={styles.skelThumbRow}>
+        <Skeleton width="48%" height={50} radius={radii.pill} />
+        <Skeleton width="48%" height={50} radius={radii.pill} />
+      </View>
       <Skeleton width="100%" height={118} radius={radii.lg} />
+      <View style={styles.skelBentoRow}>
+        <Skeleton width="48%" height={110} radius={radii.lg} />
+        <Skeleton width="48%" height={110} radius={radii.lg} />
+      </View>
     </View>
   );
 }
@@ -162,7 +146,6 @@ export default function HomeScreen() {
   const c = theme.colors;
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const reduceMotion = useReducedMotion();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [oathOpen, setOathOpen] = useState(false);
   // Pledge confirmation sheet: opens right after a pledge counts.
@@ -206,45 +189,7 @@ export default function HomeScreen() {
     }
   }, [loading, state]);
 
-  // Hero breathing scale (the reference orb breathes). Transform-only;
-  // fully static under Reduce Motion.
-  const breathe = useSharedValue(1);
-  useEffect(() => {
-    if (reduceMotion) {
-      breathe.value = 1;
-      return;
-    }
-    const half = motion.breathe.periodMs / 2;
-    const ease = Easing.inOut(Easing.sin);
-    breathe.value = withRepeat(
-      withSequence(
-        withTiming(motion.breathe.peakScale, { duration: half, easing: ease }),
-        withTiming(1, { duration: half, easing: ease })
-      ),
-      -1,
-      false
-    );
-  }, [reduceMotion, breathe]);
-  const breatheStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: breathe.value }],
-  }));
-
-  // CRAVE SOS dot pulse (opacity-only; static under Reduce Motion).
-  const pulse = useSharedValue(1);
-  useEffect(() => {
-    if (reduceMotion) {
-      pulse.value = 1;
-      return;
-    }
-    pulse.value = withRepeat(
-      withSequence(withTiming(0.35, { duration: 900 }), withTiming(1, { duration: 900 })),
-      -1,
-      true
-    );
-  }, [reduceMotion, pulse]);
-  const pulseStyle = useAnimatedStyle(() => ({ opacity: pulse.value }));
-
-  const ringSize = Math.min(width * 0.62, 232);
+  const orbSize = Math.min(width * 0.52, 200);
 
   if (loading || !state) {
     return (
@@ -259,8 +204,6 @@ export default function HomeScreen() {
   const cleanMs = calculateCleanDurationMs(nowMs, Date.parse(quit.startDate));
   const bd = breakDownDuration(cleanMs);
   const days = bd.days;
-  // The day-count ring fills as the current day completes.
-  const dayProgress = cleanMs <= 0 ? 0 : (cleanMs % MS_PER_DAY) / MS_PER_DAY;
 
   const pledged = hasPledgedToday(state.pledge, nowMs);
   const pledgeStreak = state.pledge.pledgeStreak;
@@ -326,302 +269,257 @@ export default function HomeScreen() {
 
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + spacing.xl }]}
           showsVerticalScrollIndicator={false}
         >
-          {/* Hero ring */}
-          <View style={styles.hero}>
-            <Animated.View style={breatheStyle}>
-              <ProgressRing
-                progress={dayProgress}
-                size={ringSize}
-                stroke={10}
-                color={c.accent}
-                testID="home-ring"
-              >
-                <Text
-                  style={[styles.dayCount, { color: c.text, ...typeScale.tabular }]}
-                  accessibilityRole="header"
-                  accessibilityLabel={`${days} days clean`}
-                >
-                  {days}
-                </Text>
-                <View style={styles.daysCleanRow}>
-                  <View style={[styles.dot, { backgroundColor: c.accent }]} />
-                  <Text style={[styles.daysClean, { color: c.metadata }]}>
-                    &middot; DAYS CLEAN &middot;
-                  </Text>
-                  <View style={[styles.dot, { backgroundColor: c.accent }]} />
-                </View>
-              </ProgressRing>
-            </Animated.View>
-          </View>
+          {/* ==============================================================
+              TIER 1: HERO ORB + CLEAN TIME TICKER
+              ============================================================== */}
+          <View style={styles.tier1Hero}>
+            <Orb cleanDays={days} size={orbSize} testID="home-orb" />
 
-          {/* Live timer pill */}
-          <View
-            style={styles.timerBlock}
-            accessibilityRole="timer"
-            accessibilityLabel={`Clean time right now: ${days} days, ${bd.hours} hours, ${bd.minutes} minutes, ${bd.seconds} seconds`}
-            testID="home-ticker"
-          >
-            <View style={[styles.timerPill, { backgroundColor: c.surfaceDeep }]}>
-              <Icon ios="clock" android="schedule" size={14} color={c.accent} />
-              <Text
-                style={[styles.timerTime, { color: c.text, ...typeScale.tabular }]}
-              >
-                {bd.formattedHours}:{bd.formattedMinutes}:{bd.formattedSeconds}
+            {/* Live timer pill directly below Orb */}
+            <View
+              style={styles.timerBlock}
+              accessibilityRole="timer"
+              accessibilityLabel={`Clean time right now: ${days} days, ${bd.hours} hours, ${bd.minutes} minutes, ${bd.seconds} seconds`}
+              testID="home-ticker"
+            >
+              <View style={[styles.timerPill, { backgroundColor: c.surfaceDeep }]}>
+                <Icon ios="clock" android="schedule" size={14} color={c.accent} />
+                <Text
+                  style={[styles.timerTime, { color: c.text, ...typeScale.tabular }]}
+                >
+                  {bd.formattedHours}:{bd.formattedMinutes}:{bd.formattedSeconds}
+                </Text>
+              </View>
+              <Text style={[styles.timerLabel, { color: c.metadata }]}>
+                CLEAN TIME RIGHT NOW
               </Text>
             </View>
-            <Text style={[styles.timerLabel, { color: c.metadata }]}>
-              CLEAN TIME RIGHT NOW
-            </Text>
           </View>
 
-          {/* Daily pledge */}
-          <View
-            style={[styles.card, { backgroundColor: c.surface, borderColor: c.hairline }]}
-            testID="pledge-card"
-          >
-            <View style={styles.pledgeHead}>
-              <View style={styles.pledgeTitleRow}>
-                <Text style={[styles.cardTitle, { color: c.text }]}>
-                  Daily Pledge
-                </Text>
-                {pledged ? (
-                  <View style={[styles.activePill, { backgroundColor: c.success }]}>
-                    <Text style={[styles.activePillText, { color: c.background }]}>
-                      Active
-                    </Text>
-                  </View>
-                ) : (
-                  <View style={[styles.pendingPill, { borderColor: c.hairline }]}>
-                    <Text style={[styles.pendingPillText, { color: c.metadata }]}>
-                      Not pledged
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <View style={[styles.badgeCircle, { backgroundColor: c.surfaceDeep }]}>
+          {/* ==============================================================
+              TIER 2: THUMB-ZONE ACTION BUTTONS
+              ============================================================== */}
+          <View style={styles.tier2ThumbZone}>
+            {pledged ? (
+              <Pressable
+                onPress={() => setOathOpen(true)}
+                style={({ pressed }) => [
+                  styles.thumbPledgedBtn,
+                  {
+                    backgroundColor: c.accentSoft,
+                    borderColor: c.accent,
+                  },
+                  pressed && styles.pressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Pledged today. ${pledgeStreak}-day consecutive commitment. Tap to view oath.`}
+                testID="view-oath"
+              >
                 <Icon
                   ios="checkmark.seal.fill"
                   android="verified"
                   size={18}
                   color={c.accent}
                 />
+                <Text style={[styles.thumbPledgedText, { color: c.accent }]}>
+                  Pledged ({pledgeStreak}d)
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={styles.thumbBtnWrap}>
+                <AccentButton
+                  title="Pledge Today"
+                  onPress={handlePledge}
+                  testID="pledge-button"
+                  style={styles.thumbBtn}
+                />
               </View>
+            )}
+
+            <View style={styles.thumbBtnWrap}>
+              <InvertedButton
+                title="Urge Surf"
+                onPress={() => router.push('/urge-surf')}
+                testID="urge-fab"
+                style={styles.thumbBtn}
+              />
             </View>
-            <Text style={[styles.pledgeSub, { color: c.metadata }]}>
-              Renew your commitment for the next 24 hours
-            </Text>
-            {pledged ? (
-              <View style={[styles.pledgedRow, { backgroundColor: c.surfaceDeep }]}>
-                <View style={styles.pledgedLeft}>
-                  <View style={[styles.checkCircle, { backgroundColor: c.accentSoft }]}>
-                    <Icon ios="checkmark" android="check" size={15} color={c.accent} weight="semibold" />
+          </View>
+
+          {/* ==============================================================
+              TIER 3: 2-COLUMN GLASSCARD BENTO GRID
+              ============================================================== */}
+          <View style={styles.tier3Bento}>
+            {/* Bento Item 1: Next Milestone (Full Width) */}
+            <GlassCard style={styles.bentoCard} testID="milestone-block">
+              <View style={styles.milestoneHead}>
+                <View style={styles.milestoneLeft}>
+                  <View style={[styles.iconCircle, { backgroundColor: c.surfaceDeep }]}>
+                    <Icon ios="trophy.fill" android="military_tech" size={16} color={c.accent} />
                   </View>
-                  <View style={styles.pledgedText}>
-                    <Text style={[styles.pledgedTitle, { color: c.text }]}>
-                      Pledged Today
+                  <View>
+                    <Text style={[styles.cardTitle, { color: c.text }]}>
+                      {next !== null ? `Milestone: ${next} Days` : 'Milestones'}
+                    </Text>
+                    <Text style={[styles.cardSub, { color: c.metadata }]}>
+                      Next recovery milestone
+                    </Text>
+                  </View>
+                </View>
+                {next !== null && (
+                  <View style={styles.milestoneRight}>
+                    <Text
+                      style={[styles.milestonePct, { color: c.accent, ...typeScale.tabular }]}
+                    >
+                      {milestonePct}%
                     </Text>
                     <Text
-                      style={[styles.pledgedSub2, { color: c.metadata }]}
-                      accessibilityLabel={`Pledged today. ${pledgeStreak}-day consecutive commitment.`}
+                      style={[styles.milestoneDaysLeft, { color: c.metadata }]}
+                      accessibilityLabel={`${next - days} days left to the ${next}-day milestone`}
+                    >
+                      {next - days} days left
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {next !== null ? (
+                <View
+                  style={[styles.barTrack, { backgroundColor: c.surfaceDeep }]}
+                  accessibilityRole="progressbar"
+                  accessibilityValue={{ now: milestonePct, min: 0, max: 100 }}
+                  accessibilityLabel={`Progress to the ${next}-day milestone: ${milestonePct} percent`}
+                >
+                  <View
+                    style={[styles.barFillWrap, { width: `${milestoneProgress * 100}%` }]}
+                    accessible={false}
+                    importantForAccessibility="no-hide-descendants"
+                  >
+                    <LinearGradient
+                      colors={[c.accentDeep, c.accent, c.success]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.barFill}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <Text style={[styles.milestoneDone, { color: c.text }]}>
+                  Every milestone reached.
+                </Text>
+              )}
+            </GlassCard>
+
+            {/* Bento Row: 2-Column Split (Money Saved + Urges Defeated) */}
+            <View style={styles.bentoRow}>
+              {/* Bento Item 2: Money Saved */}
+              <GlassCard style={styles.bentoCol}>
+                <View style={styles.statHead}>
+                  <Text style={[styles.statLabel, { color: c.metadata }]}>
+                    Money Saved
+                  </Text>
+                  <View style={[styles.iconCircleSm, { backgroundColor: c.surfaceDeep }]}>
+                    <Icon ios="dollarsign.circle" android="payments" size={14} color={c.success} />
+                  </View>
+                </View>
+                <Text
+                  style={[styles.statValue, { color: c.text, ...typeScale.tabular }]}
+                  accessibilityLabel={`Money saved: ${formatMoney(saved)}`}
+                >
+                  {formatMoney(saved)}
+                </Text>
+                <View style={styles.statFoot}>
+                  <Icon ios="arrow.up.right" android="trending_up" size={11} color={c.success} weight="semibold" />
+                  <Text
+                    style={[styles.statDelta, { color: c.success, ...typeScale.tabular }]}
+                  >
+                    +{perDay}/day
+                  </Text>
+                </View>
+              </GlassCard>
+
+              {/* Bento Item 3: Urges Defeated */}
+              <GlassCard style={styles.bentoCol}>
+                <View style={styles.statHead}>
+                  <Text style={[styles.statLabel, { color: c.metadata }]}>
+                    Urges Defeated
+                  </Text>
+                  <View style={[styles.iconCircleSm, { backgroundColor: c.surfaceDeep }]}>
+                    <Icon ios="shield.fill" android="shield" size={14} color={c.accent} />
+                  </View>
+                </View>
+                <Text
+                  style={[styles.statValue, { color: c.text, ...typeScale.tabular }]}
+                  accessibilityLabel={`Urges defeated: ${urgesTotal}`}
+                >
+                  {urgesTotal}
+                </Text>
+                <View style={styles.statFoot}>
+                  <View style={[styles.dot, { backgroundColor: c.accent }]} />
+                  <Text style={[styles.statSub2, { color: c.metadata }]}>
+                    {urgesToday} today
+                  </Text>
+                </View>
+              </GlassCard>
+            </View>
+
+            {/* Bento Item 4: Commitment & Wisdom (Full Width) */}
+            <GlassCard style={styles.bentoCard} testID="pledge-card">
+              <View style={styles.pledgeCardHead}>
+                <View style={styles.pledgeHeadLeft}>
+                  <Icon
+                    ios={pledged ? 'checkmark.seal.fill' : 'circle'}
+                    android={pledged ? 'verified' : 'radio_button_unchecked'}
+                    size={18}
+                    color={pledged ? c.accent : c.metadata}
+                  />
+                  <View style={styles.pledgeTitleWrap}>
+                    <Text style={[styles.cardTitle, { color: c.text }]}>
+                      {pledged ? 'Daily Pledge Active' : 'Daily Pledge'}
+                    </Text>
+                    <Text
+                      style={[styles.cardSub, { color: c.metadata }]}
                       testID="pledge-status"
                     >
-                      {pledgeStreak}-day consecutive commitment
+                      {pledged
+                        ? `${pledgeStreak}-day consecutive commitment`
+                        : 'Renew your commitment for the next 24 hours'}
                     </Text>
                   </View>
                 </View>
-                <Pressable
-                  onPress={() => setOathOpen(true)}
-                  accessibilityRole="button"
-                  accessibilityLabel="View your oath"
-                  style={[styles.oathButton, { backgroundColor: c.surface }]}
-                  testID="view-oath"
-                >
-                  <Text style={[styles.oathButtonText, { color: c.accent }]}>
-                    View oath
-                  </Text>
-                  <Icon ios="chevron.right" android="chevron_right" size={13} color={c.accent} weight="semibold" />
-                </Pressable>
+                {pledged && (
+                  <Pressable
+                    onPress={() => setOathOpen(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="View your oath"
+                    style={[styles.oathLink, { backgroundColor: c.surfaceDeep }]}
+                  >
+                    <Text style={[styles.oathLinkText, { color: c.accent }]}>Oath</Text>
+                    <Icon ios="chevron.right" android="chevron_right" size={12} color={c.accent} />
+                  </Pressable>
+                )}
               </View>
-            ) : (
-              <AccentButton
-                title="I pledge today"
-                onPress={handlePledge}
-                style={styles.pledgeCta}
-                testID="pledge-button"
-              />
-            )}
-          </View>
 
-          {/* Milestone */}
-          <View
-            style={[styles.card, { backgroundColor: c.surface, borderColor: c.hairline }]}
-            testID="milestone-block"
-          >
-            <View style={styles.milestoneHead}>
-              <View style={styles.milestoneLeft}>
-                <View style={[styles.trophyBox, { backgroundColor: c.surfaceDeep }]}>
-                  <Icon ios="trophy.fill" android="military_tech" size={16} color={c.accent} />
-                </View>
-                <View>
-                  <Text style={[styles.milestoneTitle, { color: c.text }]}>
-                    {next !== null ? `Milestone: ${next} Days` : 'Milestones'}
-                  </Text>
-                  <Text style={[styles.milestoneSub, { color: c.metadata }]}>
-                    Next recovery milestone
-                  </Text>
-                </View>
-              </View>
-              {next !== null && (
-                <View style={styles.milestoneRight}>
-                  <Text
-                    style={[styles.milestonePct, { color: c.accent, ...typeScale.tabular }]}
-                  >
-                    {milestonePct}%
-                  </Text>
-                  <Text
-                    style={[styles.milestoneDaysLeft, { color: c.metadata }]}
-                    accessibilityLabel={`${next - days} days left to the ${next}-day milestone`}
-                  >
-                    {next - days} days left
-                  </Text>
-                </View>
-              )}
-            </View>
-            {next !== null ? (
+              <View style={[styles.cardDivider, { backgroundColor: c.hairline }]} />
+
               <View
-                style={[styles.barTrack, { backgroundColor: c.surfaceDeep }]}
-                accessibilityRole="progressbar"
-                accessibilityValue={{ now: milestonePct, min: 0, max: 100 }}
-                accessibilityLabel={`Progress to the ${next}-day milestone: ${milestonePct} percent`}
+                style={styles.quoteRow}
+                accessibilityRole="text"
+                accessibilityLabel="Quote: Freedom is not the absence of desire, but the mastery of choice."
               >
-                {/* Decorative gradient fill; the track above exposes the
-                    progressbar role to VoiceOver. */}
-                <View
-                  style={[styles.barFillWrap, { width: `${milestoneProgress * 100}%` }]}
-                  accessible={false}
-                  importantForAccessibility="no-hide-descendants"
-                >
-                  <LinearGradient
-                    colors={[c.accentDeep, c.accent, c.success]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.barFill}
-                  />
-                </View>
+                <Icon ios="quote.opening" android="format_quote" size={16} color={c.metadata} />
+                <Text style={[styles.quoteText, { color: c.metadata }]}>
+                  &ldquo;Freedom is not the absence of desire, but the mastery of
+                  choice.&rdquo;
+                </Text>
               </View>
-            ) : (
-              <Text style={[styles.milestoneDone, { color: c.text }]}>
-                Every milestone reached.
-              </Text>
-            )}
+            </GlassCard>
           </View>
-
-          {/* Stat cards */}
-          <View style={styles.statGrid}>
-            <View
-              style={[
-                styles.card,
-                styles.statCard,
-                { backgroundColor: c.surface, borderColor: c.hairline },
-              ]}
-            >
-              <View style={styles.statHead}>
-                <Text style={[styles.statLabel, { color: c.metadata }]}>
-                  Money Saved
-                </Text>
-                <View style={[styles.statIcon, { backgroundColor: c.surfaceDeep }]}>
-                  <Icon ios="dollarsign.circle" android="payments" size={14} color={c.success} />
-                </View>
-              </View>
-              <Text
-                style={[styles.statValue, { color: c.text, ...typeScale.tabular }]}
-                accessibilityLabel={`Money saved: ${formatMoney(saved)}`}
-              >
-                {formatMoney(saved)}
-              </Text>
-              <View style={styles.statFoot}>
-                <Icon ios="arrow.up.right" android="trending_up" size={11} color={c.success} weight="semibold" />
-                <Text
-                  style={[styles.statDelta, { color: c.success, ...typeScale.tabular }]}
-                >
-                  +{perDay} / day
-                </Text>
-              </View>
-            </View>
-            <View
-              style={[
-                styles.card,
-                styles.statCard,
-                { backgroundColor: c.surface, borderColor: c.hairline },
-              ]}
-            >
-              <View style={styles.statHead}>
-                <Text style={[styles.statLabel, { color: c.metadata }]}>
-                  Urges Defeated
-                </Text>
-                <View style={[styles.statIcon, { backgroundColor: c.surfaceDeep }]}>
-                  <Icon ios="shield.fill" android="shield" size={14} color={c.accent} />
-                </View>
-              </View>
-              <Text
-                style={[styles.statValue, { color: c.text, ...typeScale.tabular }]}
-                accessibilityLabel={`Urges defeated: ${urgesTotal}`}
-              >
-                {urgesTotal}
-              </Text>
-              <View style={styles.statFoot}>
-                <View style={[styles.dot, { backgroundColor: c.accent }]} />
-                <Text style={[styles.statSub2, { color: c.metadata }]}>
-                  {urgesToday} today so far
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Quote */}
-          <View
-            style={[styles.quoteCard, { backgroundColor: c.surfaceDeep }]}
-            accessibilityRole="text"
-            accessibilityLabel="Quote: Freedom is not the absence of desire, but the mastery of choice."
-          >
-            <Icon ios="quote.opening" android="format_quote" size={18} color={c.metadata} />
-            <Text style={[styles.quoteText, { color: c.metadata }]}>
-              &ldquo;Freedom is not the absence of desire, but the mastery of
-              choice.&rdquo;
-            </Text>
-          </View>
-
-          {/* Clearance for the floating SOS cluster */}
-          <View style={styles.bottomSpacer} />
         </ScrollView>
       </Screen>
-
-      {/* CRAVE SOS pill + waveform FAB */}
-      <View
-        style={[styles.sosCluster, { bottom: insets.bottom + spacing.md }]}
-        pointerEvents="box-none"
-      >
-        <View
-          style={[styles.sosPill, { backgroundColor: c.surface, borderColor: c.hairline }]}
-          accessibilityRole="text"
-          accessibilityLabel="Crave SOS — tap the waveform button for urge surf"
-        >
-          <Animated.View
-            style={[styles.sosDot, { backgroundColor: c.danger }, pulseStyle]}
-          />
-          <Text style={[styles.sosText, { color: c.text }]}>CRAVE SOS</Text>
-        </View>
-        <FAB
-          iosSymbol="waveform"
-          androidSymbol="graphic_eq"
-          label="Urge surf — ride out a craving"
-          onPress={() => router.push('/urge-surf')}
-          testID="urge-fab"
-        />
-      </View>
 
       <OathSheet visible={oathOpen} onClose={() => setOathOpen(false)} />
 
@@ -670,9 +568,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
     gap: spacing.lg,
-    paddingBottom: spacing.md,
   },
-  bottomSpacer: { height: 96 },
 
   // Skeleton
   skelContent: {
@@ -687,6 +583,16 @@ const styles = StyleSheet.create({
   },
   skelHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   skelCenter: { alignSelf: 'center' },
+  skelThumbRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  skelBentoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
 
   // Header
   header: {
@@ -726,162 +632,87 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Hero
-  hero: {
+  // TIER 1: HERO ORB + CLEAN TIME TICKER
+  tier1Hero: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: spacing.sm,
   },
-  dayCount: {
-    fontSize: 60,
-    fontWeight: '800',
-    letterSpacing: -1,
-    lineHeight: 64,
-  },
-  daysCleanRow: {
-    flexDirection: 'row',
+  timerBlock: {
     alignItems: 'center',
+    marginTop: -spacing.md,
     gap: 6,
-    marginTop: spacing.sm,
   },
-  daysClean: {
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 2.2,
-    textTransform: 'uppercase',
-  },
-  dot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-
-  // Timer
-  timerBlock: { alignItems: 'center', gap: spacing.xs },
   timerPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: radii.pill,
   },
   timerTime: {
     fontSize: 14,
-    fontWeight: '500',
-    letterSpacing: 1.5,
+    fontWeight: '600',
+    letterSpacing: 0.5,
   },
   timerLabel: {
     fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: 1.5,
   },
 
-  // Cards (shared)
-  card: {
-    borderRadius: radii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.md,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-
-  // Pledge
-  pledgeHead: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  pledgeTitleRow: {
+  // TIER 2: THUMB-ZONE ACTION ROW
+  tier2ThumbZone: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
   },
-  activePill: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radii.pill,
-  },
-  activePillText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  pendingPill: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  pendingPillText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
-  badgeCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pledgeSub: {
-    ...typeScale.caption,
-    marginTop: spacing.xs,
-  },
-  pledgedRow: {
-    marginTop: spacing.md,
-    borderRadius: radii.md,
-    padding: spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  pledgedLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  thumbBtnWrap: {
     flex: 1,
   },
-  checkCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+  thumbBtn: {
+    minHeight: 50,
   },
-  pledgedText: { flex: 1 },
-  pledgedTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  pledgedSub2: {
-    fontSize: 10,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  oathButton: {
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.sm,
+  thumbPledgedBtn: {
+    flex: 1,
+    minHeight: 50,
+    borderRadius: radii.pill,
+    borderWidth: 1.5,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: spacing.md,
   },
-  oathButtonText: {
-    fontSize: 12,
-    fontWeight: '500',
+  thumbPledgedText: {
+    ...typeScale.headline,
+    fontWeight: '700',
   },
-  pledgeCta: { marginTop: spacing.md },
+  pressed: {
+    opacity: 0.8,
+  },
 
-  // Milestone
+  // TIER 3: BENTO GRID
+  tier3Bento: {
+    gap: spacing.md,
+  },
+  bentoCard: {
+    width: '100%',
+  },
+  bentoRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  bentoCol: {
+    flex: 1,
+  },
+
+  // Milestone inside Bento
   milestoneHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: spacing.sm,
   },
   milestoneLeft: {
     flexDirection: 'row',
@@ -889,165 +720,174 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     flex: 1,
   },
-  trophyBox: {
-    width: 28,
-    height: 28,
-    borderRadius: radii.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
+  milestoneRight: {
+    alignItems: 'flex-end',
   },
-  milestoneTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.1,
-  },
-  milestoneSub: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  milestoneRight: { alignItems: 'flex-end' },
   milestonePct: {
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: '700',
   },
   milestoneDaysLeft: {
-    fontSize: 10,
+    fontSize: 11,
+    fontWeight: '500',
     marginTop: 2,
   },
   barTrack: {
     height: 8,
     borderRadius: 4,
-    marginTop: spacing.md,
-    padding: 2,
     overflow: 'hidden',
+    marginTop: spacing.xs,
   },
   barFillWrap: {
     height: '100%',
-    borderRadius: 2,
+    borderRadius: 4,
     overflow: 'hidden',
   },
-  barFill: { flex: 1 },
+  barFill: {
+    flex: 1,
+  },
   milestoneDone: {
-    ...typeScale.body,
-    marginTop: spacing.sm,
+    ...typeScale.subhead,
+    marginTop: spacing.xs,
   },
 
-  // Stat cards
-  statGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
+  // Common card elements
+  cardTitle: {
+    ...typeScale.headline,
   },
-  statCard: {
-    flex: 1,
-    minHeight: 112,
-    justifyContent: 'space-between',
-    gap: spacing.sm,
+  cardSub: {
+    ...typeScale.caption,
+    marginTop: 2,
   },
+  iconCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconCircleSm: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: spacing.sm,
+  },
+
+  // Stat cards in 2-col row
   statHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginBottom: spacing.xs,
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '500',
   },
-  statIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   statValue: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
-    letterSpacing: 0.2,
+    lineHeight: 28,
   },
   statFoot: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    marginTop: spacing.xs,
   },
   statDelta: {
-    fontSize: 10,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   statSub2: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '500',
   },
+  dot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
 
-  // Quote
-  quoteCard: {
-    borderRadius: radii.md,
-    padding: 14,
+  // Pledge card in Bento
+  pledgeCardHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pledgeHeadLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    flex: 1,
+  },
+  pledgeTitleWrap: {
+    flex: 1,
+  },
+  oathLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radii.pill,
+  },
+  oathLinkText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Quote
+  quoteRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   quoteText: {
     flex: 1,
     fontSize: 12,
     fontStyle: 'italic',
-    lineHeight: 18,
+    lineHeight: 17,
   },
 
-  // SOS cluster
-  sosCluster: {
-    position: 'absolute',
-    right: spacing.md,
-    alignItems: 'flex-end',
-    gap: 6,
-  },
-  sosPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radii.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  sosDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  sosText: {
-    fontSize: 10,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-  },
-
-  // Oath sheet
+  // Oath Sheet
   oathSheet: {
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.lg,
     gap: spacing.md,
+    alignItems: 'center',
   },
   oathEyebrow: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 1,
+    ...typeScale.subhead,
+    fontWeight: '700',
     textTransform: 'uppercase',
+    letterSpacing: 1.2,
   },
   oathQuote: {
-    fontSize: 20,
-    fontWeight: '600',
-    lineHeight: 28,
+    ...typeScale.title3,
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   oathFoot: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 6,
   },
   recDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   oathNote: {
-    ...typeScale.footnote,
+    ...typeScale.caption,
   },
-  oathDone: { marginTop: spacing.sm },
+  oathDone: {
+    alignSelf: 'stretch',
+    marginTop: spacing.sm,
+  },
 });
