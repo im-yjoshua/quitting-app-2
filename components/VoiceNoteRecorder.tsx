@@ -22,7 +22,7 @@ import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { GlassButton } from './glass/GlassButton';
+import { GlassButton } from './ui';
 import {
   saveVoiceJournal,
   type VoiceJournalEntry,

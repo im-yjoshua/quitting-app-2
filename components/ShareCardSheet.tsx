@@ -28,8 +28,7 @@ import {
 } from 'react-native';
 
 import { ShareCard } from './ShareCard';
-import { GlassButton } from './glass/GlassButton';
-import { Sheet } from './glass/Sheet';
+import { GlassButton, Sheet } from './ui';
 import type { QuitCategory, ShareCardStyle } from '../types/app';
 import { radii, spacing, type } from '../theme/tokens';
 import { useTheme } from '../theme/useTheme';
@@ -120,7 +119,7 @@ export function ShareCardSheet({
   };
 
   return (
-    <Sheet visible={visible} onClose={onClose} dismissLabel="Close">
+    <Sheet visible={visible} onClose={onClose}>
       <View style={styles.inner}>
         <Text style={[styles.title, { color: c.text }]}>
           Share your streak
